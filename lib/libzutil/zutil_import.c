@@ -1210,13 +1210,32 @@ label_paths(libpc_handle_t *hdl, nvlist_t *label, const char **path,
 	nvlist_t *nvroot;
 	uint64_t pool_guid;
 	uint64_t vdev_guid;
+	uint64_t state;
+	int is_aux = ((nvlist_lookup_uint64(label, ZPOOL_CONFIG_POOL_STATE,
+	    &state) == 0) && (state == POOL_STATE_SPARE ||
+	    state == POOL_STATE_L2CACHE));
 
 	*path = NULL;
 	*devid = NULL;
 
+	/*
+	 * In case of spare or l2cache, we directly return path/devid from the
+	 * label.
+	 */
+	if (nvlist_lookup_uint64(label, ZPOOL_CONFIG_GUID, &vdev_guid) == 0) {
+		if (is_aux) {
+			(void) nvlist_lookup_string(label, ZPOOL_CONFIG_PATH,
+			    &path);
+			(void) nvlist_lookup_string(label, ZPOOL_CONFIG_DEVID,
+			    &devid);
+			return (0);
+		}
+	} else {
+		return (ENOENT);
+	}
+
 	if (nvlist_lookup_nvlist(label, ZPOOL_CONFIG_VDEV_TREE, &nvroot) ||
-	    nvlist_lookup_uint64(label, ZPOOL_CONFIG_POOL_GUID, &pool_guid) ||
-	    nvlist_lookup_uint64(label, ZPOOL_CONFIG_GUID, &vdev_guid))
+	    nvlist_lookup_uint64(label, ZPOOL_CONFIG_POOL_GUID, &pool_guid))
 		return (ENOENT);
 
 	return (label_paths_impl(hdl, nvroot, pool_guid, vdev_guid, path,
