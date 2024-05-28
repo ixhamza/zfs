@@ -8927,7 +8927,7 @@ main(int argc, char **argv)
 	struct sigaction action;
 	boolean_t force_import = B_FALSE;
 	boolean_t config_path_console = B_FALSE;
-	char pbuf[MAXPATHLEN];
+//	char pbuf[MAXPATHLEN];
 
 	dprintf_setup(&argc, argv);
 
@@ -9184,14 +9184,15 @@ main(int argc, char **argv)
 	if (!spa_config_path_env && !config_path_console && target &&
 	    libzfs_core_init() == 0) {
 		char *pname = strdup(target);
-		const char *value;
+//		const char *value;
 		nvlist_t *pnvl;
-		nvlist_t *vnvl;
+//		nvlist_t *vnvl;
 
 		if (strpbrk(pname, "/@") != NULL)
 			*strpbrk(pname, "/@") = '\0';
 
 		if (pname && lzc_get_props(pname, &pnvl) == 0) {
+#if 0
 			if (nvlist_lookup_nvlist(pnvl, "cachefile",
 			    &vnvl) == 0) {
 				value = fnvlist_lookup_string(vnvl,
@@ -9213,6 +9214,7 @@ main(int argc, char **argv)
 				}
 			}
 			nvlist_free(vnvl);
+#endif
 		}
 
 		free(pname);
