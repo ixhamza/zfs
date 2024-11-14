@@ -6870,8 +6870,13 @@ collect_pool(zpool_handle_t *zhp, list_cbdata_t *cb)
 		if (cb->cb_json) {
 			if (pl->pl_prop == ZPOOL_PROP_NAME)
 				continue;
+			const char *prop_name;
+			if (pl->pl_prop != ZPROP_USERPROP)
+				prop_name = zpool_prop_to_name(pl->pl_prop);
+			else
+				prop_name = pl->pl_user_prop;
 			(void) zprop_nvlist_one_property(
-			    zpool_prop_to_name(pl->pl_prop), propstr,
+			    prop_name, propstr,
 			    sourcetype, NULL, NULL, props, cb->cb_json_as_int);
 		} else {
 			/*
@@ -7328,6 +7333,7 @@ zpool_do_list(int argc, char **argv)
 	current_prop_type = ZFS_TYPE_POOL;
 
 	struct option long_options[] = {
+		{"json", no_argument, NULL, 'j'},
 		{"json-int", no_argument, NULL, ZPOOL_OPTION_JSON_NUMS_AS_INT},
 		{"json-pool-key-guid", no_argument, NULL,
 		    ZPOOL_OPTION_POOL_KEY_GUID},
@@ -7953,8 +7959,11 @@ zpool_do_online(int argc, char **argv)
 
 	poolname = argv[0];
 
-	if ((zhp = zpool_open(g_zfs, poolname)) == NULL)
+	if ((zhp = zpool_open(g_zfs, poolname)) == NULL) {
+		(void) fprintf(stderr, gettext("failed to open pool "
+		    "\"%s\""), poolname);
 		return (1);
+	}
 
 	for (i = 1; i < argc; i++) {
 		vdev_state_t oldstate;
@@ -7975,12 +7984,15 @@ zpool_do_online(int argc, char **argv)
 		    &l2cache, NULL);
 		if (tgt == NULL) {
 			ret = 1;
+			(void) fprintf(stderr, gettext("couldn't find device "
+			"\"%s\" in pool \"%s\"\n"), argv[i], poolname);
 			continue;
 		}
 		uint_t vsc;
 		oldstate = ((vdev_stat_t *)fnvlist_lookup_uint64_array(tgt,
 		    ZPOOL_CONFIG_VDEV_STATS, &vsc))->vs_state;
-		if (zpool_vdev_online(zhp, argv[i], flags, &newstate) == 0) {
+		if ((rc = zpool_vdev_online(zhp, argv[i], flags,
+		    &newstate)) == 0) {
 			if (newstate != VDEV_STATE_HEALTHY) {
 				(void) printf(gettext("warning: device '%s' "
 				    "onlined, but remains in faulted state\n"),
@@ -8006,6 +8018,9 @@ zpool_do_online(int argc, char **argv)
 				}
 			}
 		} else {
+			(void) fprintf(stderr, gettext("Failed to online "
+			    "\"%s\" in pool \"%s\": %d\n"),
+			    argv[i], poolname, rc);
 			ret = 1;
 		}
 	}
@@ -8090,8 +8105,11 @@ zpool_do_offline(int argc, char **argv)
 
 	poolname = argv[0];
 
-	if ((zhp = zpool_open(g_zfs, poolname)) == NULL)
+	if ((zhp = zpool_open(g_zfs, poolname)) == NULL) {
+		(void) fprintf(stderr, gettext("failed to open pool "
+		    "\"%s\""), poolname);
 		return (1);
+	}
 
 	for (i = 1; i < argc; i++) {
 		uint64_t guid = zpool_vdev_path_to_guid(zhp, argv[i]);
@@ -10958,6 +10976,7 @@ zpool_do_status(int argc, char **argv)
 
 	struct option long_options[] = {
 		{"power", no_argument, NULL, ZPOOL_OPTION_POWER},
+		{"json", no_argument, NULL, 'j'},
 		{"json-int", no_argument, NULL, ZPOOL_OPTION_JSON_NUMS_AS_INT},
 		{"json-flat-vdevs", no_argument, NULL,
 		    ZPOOL_OPTION_JSON_FLAT_VDEVS},
@@ -12563,6 +12582,7 @@ zpool_do_get(int argc, char **argv)
 	current_prop_type = cb.cb_type;
 
 	struct option long_options[] = {
+		{"json", no_argument, NULL, 'j'},
 		{"json-int", no_argument, NULL, ZPOOL_OPTION_JSON_NUMS_AS_INT},
 		{"json-pool-key-guid", no_argument, NULL,
 		    ZPOOL_OPTION_POOL_KEY_GUID},
@@ -13477,7 +13497,12 @@ zpool_do_version(int argc, char **argv)
 	int c;
 	nvlist_t *jsobj = NULL, *zfs_ver = NULL;
 	boolean_t json = B_FALSE;
-	while ((c = getopt(argc, argv, "j")) != -1) {
+
+	struct option long_options[] = {
+		{"json", no_argument, NULL, 'j'},
+	};
+
+	while ((c = getopt_long(argc, argv, "j", long_options, NULL)) != -1) {
 		switch (c) {
 		case 'j':
 			json = B_TRUE;

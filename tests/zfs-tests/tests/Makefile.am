@@ -1468,6 +1468,7 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/events/setup.ksh \
 	functional/events/zed_cksum_config.ksh \
 	functional/events/zed_cksum_reported.ksh \
+	functional/events/zed_diagnose_multiple.ksh \
 	functional/events/zed_fd_spill.ksh \
 	functional/events/zed_io_config.ksh \
 	functional/events/zed_rc_filter.ksh \
@@ -1498,6 +1499,7 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/fault/cleanup.ksh \
 	functional/fault/decompress_fault.ksh \
 	functional/fault/decrypt_fault.ksh \
+	functional/fault/fault_limits.ksh \
 	functional/fault/scrub_after_resilver.ksh \
 	functional/fault/suspend_resume_single.ksh \
 	functional/fault/setup.ksh \

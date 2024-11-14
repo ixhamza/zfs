@@ -105,7 +105,7 @@ tags = ['functional', 'devices']
 [tests/functional/events:Linux]
 tests = ['events_001_pos', 'events_002_pos', 'zed_rc_filter', 'zed_fd_spill',
     'zed_cksum_reported', 'zed_cksum_config', 'zed_io_config',
-    'zed_slow_io', 'zed_slow_io_many_vdevs']
+    'zed_slow_io', 'zed_slow_io_many_vdevs', 'zed_diagnose_multiple']
 tags = ['functional', 'events']
 
 [tests/functional/fadvise:Linux]
@@ -121,7 +121,8 @@ tests = ['auto_offline_001_pos', 'auto_online_001_pos', 'auto_online_002_pos',
     'auto_replace_001_pos', 'auto_replace_002_pos', 'auto_spare_001_pos',
     'auto_spare_002_pos', 'auto_spare_multiple', 'auto_spare_ashift',
     'auto_spare_shared', 'decrypt_fault', 'decompress_fault',
-    'scrub_after_resilver', 'suspend_resume_single', 'zpool_status_-s']
+    'fault_limits', 'scrub_after_resilver', 'suspend_resume_single',
+    'zpool_status_-s']
 tags = ['functional', 'fault']
 
 [tests/functional/features/large_dnode:Linux]
