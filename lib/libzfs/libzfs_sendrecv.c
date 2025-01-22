@@ -3566,11 +3566,19 @@ again:
 		for (snapelem = nvlist_next_nvpair(snaps, NULL);
 		    snapelem; snapelem = nvlist_next_nvpair(snaps, snapelem)) {
 			uint64_t thisguid;
+			nvlist_t *this_nvfs = NULL;
+			const char *stream_snapname = NULL;
 
 			thisguid = fnvpair_value_uint64(snapelem);
-			stream_nvfs = fsavl_find(stream_avl, thisguid, NULL);
+			if ((this_nvfs = fsavl_find(stream_avl, thisguid,
+			    &stream_snapname)) != NULL)
+				stream_nvfs = this_nvfs;
 
-			if (stream_nvfs != NULL)
+			if (stream_snapname && strcmp(stream_snapname, fromsnap)
+			    == 0)
+				fromguid = thisguid;
+
+			if (stream_nvfs && fromguid)
 				break;
 		}
 
@@ -3630,6 +3638,17 @@ again:
 				if (!flags->force)
 					continue;
 
+				/*
+				 * If we have --preserve-old flag set, check
+				 * current snapshot birth with the one found
+				 * in the stream. Only delete recent snapshots
+				 * but preserve older ones.
+				 */
+				if (flags->preserveold && fromguid &&
+				    created_before(hdl, local_avl, thisguid,
+				    fromguid) == -1)
+					continue;
+
 				(void) snprintf(name, sizeof (name), "%s@%s",
 				    fsname, nvpair_name(snapelem));
 
@@ -3679,9 +3698,6 @@ again:
 				else
 					progress = B_TRUE;
 			}
-
-			if (strcmp(stream_snapname, fromsnap) == 0)
-				fromguid = thisguid;
 		}
 
 		/* check for delete */
