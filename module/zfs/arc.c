@@ -5885,20 +5885,6 @@ top:
 			goto done;
 		}
 
-		/*
-		 * Verify the block pointer contents are reasonable.  This
-		 * should always be the case since the blkptr is protected by
-		 * a checksum.
-		 */
-		if (!zfs_blkptr_verify(spa, bp,
-		    (zio_flags & ZIO_FLAG_CONFIG_WRITER) ?
-		    BLK_CONFIG_HELD : BLK_CONFIG_NEEDED, BLK_VERIFY_LOG)) {
-			if (hash_lock != NULL)
-				mutex_exit(hash_lock);
-			rc = SET_ERROR(ECKSUM);
-			goto done;
-		}
-
 		if (hdr == NULL) {
 			/*
 			 * This block is not in the cache or it has
@@ -6211,6 +6197,18 @@ top:
 
 		if (hash_lock != NULL)
 			mutex_exit(hash_lock);
+
+		/*
+		 * Verify the block pointer contents are reasonable.  This
+		 * should always be the case since the blkptr is protected by
+		 * a checksum.
+		 */
+		if (!zfs_blkptr_verify(spa, bp,
+		    (zio_flags & ZIO_FLAG_CONFIG_WRITER) ?
+		    BLK_CONFIG_HELD : BLK_CONFIG_NEEDED, BLK_VERIFY_LOG)) {
+			rc = SET_ERROR(ECKSUM);
+			goto done;
+		}
 
 		if (*arc_flags & ARC_FLAG_WAIT) {
 			rc = zio_wait(rzio);
