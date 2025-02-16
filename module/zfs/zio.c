@@ -1179,7 +1179,7 @@ zfs_blkptr_verify_log(spa_t *spa, const blkptr_t *bp,
  *   BLK_CONFIG_SKIP: skip checks which require SCL_VDEV, for better
  *   performance
  */
-boolean_t
+int
 zfs_blkptr_verify(spa_t *spa, const blkptr_t *bp,
     enum blk_config_flag blk_config, enum blk_verify_flag blk_verify)
 {
@@ -1238,6 +1238,10 @@ zfs_blkptr_verify(spa_t *spa, const blkptr_t *bp,
 	case BLK_CONFIG_NEEDED:
 		spa_config_enter(spa, SCL_VDEV, bp, RW_READER);
 		break;
+	case BLK_CONFIG_NEEDED_TRY:
+		if (!spa_config_tryenter(spa, SCL_VDEV, bp, RW_READER))
+			return (-EBUSY);
+		break;
 	case BLK_CONFIG_SKIP:
 		return (errors == 0);
 	default:
@@ -1294,7 +1298,8 @@ zfs_blkptr_verify(spa_t *spa, const blkptr_t *bp,
 			    bp, i, (longlong_t)offset);
 		}
 	}
-	if (blk_config == BLK_CONFIG_NEEDED)
+	if (blk_config == BLK_CONFIG_NEEDED || blk_config ==
+	    BLK_CONFIG_NEEDED_TRY)
 		spa_config_exit(spa, SCL_VDEV, bp);
 
 	return (errors == 0);
