@@ -1021,6 +1021,18 @@ zfs_which_resv_prop(zfs_handle_t *zhp, zfs_prop_t *resv_prop)
 	return (0);
 }
 
+static int is_default_quota(zfs_userquota_prop_t type)
+{
+	if (type == ZFS_PROP_DEFAULTUSERQUOTA ||
+	    type == ZFS_PROP_DEFAULTUSEROBJQUOTA ||
+	    type == ZFS_PROP_DEFAULTGROUPQUOTA ||
+	    type == ZFS_PROP_DEFAULTGROUPOBJQUOTA ||
+	    type == ZFS_PROP_DEFAULTPROJECTQUOTA ||
+	    type == ZFS_PROP_DEFAULTPROJECTOBJQUOTA)
+		return (B_TRUE);
+	return (B_FALSE);
+}
+
 /*
  * Given an nvlist of properties to set, validates that they are correct, and
  * parses any numeric properties (index, boolean, etc) if they are specified as
@@ -1100,6 +1112,7 @@ zfs_valid_proplist(libzfs_handle_t *hdl, zfs_type_t type, nvlist_t *nvl,
 			uint64_t rid;
 			uint64_t valary[3];
 			int rc;
+			boolean_t default_quota;
 
 			if (userquota_propname_decode(propname, zoned,
 			    &uqtype, domain, sizeof (domain), &rid) != 0) {
@@ -1111,7 +1124,9 @@ zfs_valid_proplist(libzfs_handle_t *hdl, zfs_type_t type, nvlist_t *nvl,
 				goto error;
 			}
 
-			if (uqtype != ZFS_PROP_USERQUOTA &&
+			default_quota = is_default_quota(uqtype);
+
+			if (!default_quota && uqtype != ZFS_PROP_USERQUOTA &&
 			    uqtype != ZFS_PROP_GROUPQUOTA &&
 			    uqtype != ZFS_PROP_USEROBJQUOTA &&
 			    uqtype != ZFS_PROP_GROUPOBJQUOTA &&
@@ -1156,9 +1171,16 @@ zfs_valid_proplist(libzfs_handle_t *hdl, zfs_type_t type, nvlist_t *nvl,
 			 * userquota@<hex-rid>-domain, to make it easy
 			 * for the kernel to decode.
 			 */
-			rc = asprintf(&newpropname, "%s%llx-%s",
-			    zfs_userquota_prop_prefixes[uqtype],
-			    (longlong_t)rid, domain);
+			if (default_quota == B_TRUE) {
+				rc = asprintf(&newpropname, "%s-",
+				    zfs_userquota_prop_prefixes[uqtype]);
+			} else {
+				rc = asprintf(&newpropname, "%s%llx-%s",
+				    zfs_userquota_prop_prefixes[uqtype],
+				    (longlong_t)rid, domain);
+
+			}
+
 			if (rc == -1 || newpropname == NULL) {
 				(void) no_memory(hdl);
 				goto error;
@@ -2811,8 +2833,6 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 	case ZFS_PROP_REFQUOTA:
 	case ZFS_PROP_RESERVATION:
 	case ZFS_PROP_REFRESERVATION:
-	case ZFS_PROP_DEFAULTUSERQUOTA:
-	case ZFS_PROP_DEFAULTGROUPQUOTA:
 
 		if (get_numeric_property(zhp, prop, src, &source, &val) != 0)
 			return (-1);
@@ -3199,6 +3219,9 @@ userquota_propname_decode(const char *propname, boolean_t zoned,
 	    type == ZFS_PROP_PROJECTUSED || type == ZFS_PROP_PROJECTOBJQUOTA ||
 	    type == ZFS_PROP_PROJECTOBJUSED);
 
+	if (is_default_quota(type))
+		return (0);
+
 	cp = strchr(propname, '@') + 1;
 
 	if (isuser &&
@@ -3338,11 +3361,14 @@ zfs_prop_get_userquota(zfs_handle_t *zhp, const char *propname,
 	    (type == ZFS_PROP_USERQUOTA || type == ZFS_PROP_GROUPQUOTA ||
 	    type == ZFS_PROP_USEROBJQUOTA || type == ZFS_PROP_GROUPOBJQUOTA ||
 	    type == ZFS_PROP_PROJECTQUOTA ||
-	    type == ZFS_PROP_PROJECTOBJQUOTA)) {
+	    type == ZFS_PROP_PROJECTOBJQUOTA || is_default_quota(type))) {
 		(void) strlcpy(propbuf, "none", proplen);
 	} else if (type == ZFS_PROP_USERQUOTA || type == ZFS_PROP_GROUPQUOTA ||
 	    type == ZFS_PROP_USERUSED || type == ZFS_PROP_GROUPUSED ||
-	    type == ZFS_PROP_PROJECTUSED || type == ZFS_PROP_PROJECTQUOTA) {
+	    type == ZFS_PROP_PROJECTUSED || type == ZFS_PROP_PROJECTQUOTA ||
+	    type == ZFS_PROP_DEFAULTUSERQUOTA ||
+	    type == ZFS_PROP_DEFAULTGROUPQUOTA ||
+	    type == ZFS_PROP_DEFAULTPROJECTQUOTA) {
 		zfs_nicebytes(propvalue, propbuf, proplen);
 	} else {
 		zfs_nicenum(propvalue, propbuf, proplen);

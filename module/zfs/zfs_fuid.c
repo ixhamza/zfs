@@ -788,10 +788,15 @@ zfs_fuid_txhold(zfsvfs_t *zfsvfs, dmu_tx_t *tx)
  */
 int
 zfs_id_to_fuidstr(zfsvfs_t *zfsvfs, const char *domain, uid_t rid,
-    char *buf, size_t len, boolean_t addok)
+    char *buf, size_t len, boolean_t addok, boolean_t is_default)
 {
 	uint64_t fuid;
 	int domainid = 0;
+
+	if (is_default) {
+		(void) snprintf(buf, len, "default");
+		return (0);
+	}
 
 	if (domain && domain[0]) {
 		domainid = zfs_fuid_find_by_domain(zfsvfs, domain, NULL, addok);

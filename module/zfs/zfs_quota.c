@@ -129,6 +129,19 @@ fuidstr_to_sid(zfsvfs_t *zfsvfs, const char *fuidstr,
 	*ridp = FUID_RID(fuid);
 }
 
+static boolean_t
+zfs_userquota_isdefault(zfs_userquota_prop_t type)
+{
+	if (type == ZFS_PROP_DEFAULTUSERQUOTA ||
+	    type == ZFS_PROP_DEFAULTUSEROBJQUOTA ||
+	    type == ZFS_PROP_DEFAULTGROUPQUOTA ||
+	    type == ZFS_PROP_DEFAULTGROUPOBJQUOTA ||
+	    type == ZFS_PROP_DEFAULTPROJECTQUOTA ||
+	    type == ZFS_PROP_DEFAULTPROJECTOBJQUOTA)
+		return (B_TRUE);
+	return (B_FALSE);
+}
+
 static uint64_t
 zfs_userquota_prop_to_obj(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type)
 {
@@ -143,16 +156,22 @@ zfs_userquota_prop_to_obj(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type)
 	case ZFS_PROP_PROJECTOBJUSED:
 		return (DMU_PROJECTUSED_OBJECT);
 	case ZFS_PROP_USERQUOTA:
+	case ZFS_PROP_DEFAULTUSERQUOTA:
 		return (zfsvfs->z_userquota_obj);
 	case ZFS_PROP_GROUPQUOTA:
+	case ZFS_PROP_DEFAULTGROUPQUOTA:
 		return (zfsvfs->z_groupquota_obj);
 	case ZFS_PROP_USEROBJQUOTA:
+	case ZFS_PROP_DEFAULTUSEROBJQUOTA:
 		return (zfsvfs->z_userobjquota_obj);
 	case ZFS_PROP_GROUPOBJQUOTA:
+	case ZFS_PROP_DEFAULTGROUPOBJQUOTA:
 		return (zfsvfs->z_groupobjquota_obj);
 	case ZFS_PROP_PROJECTQUOTA:
+	case ZFS_PROP_DEFAULTPROJECTQUOTA:
 		return (zfsvfs->z_projectquota_obj);
 	case ZFS_PROP_PROJECTOBJQUOTA:
+	case ZFS_PROP_DEFAULTPROJECTOBJQUOTA:
 		return (zfsvfs->z_projectobjquota_obj);
 	default:
 		return (ZFS_NO_OBJECT);
@@ -237,6 +256,7 @@ zfs_userspace_one(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
 	int offset = 0;
 	int err;
 	uint64_t obj;
+	boolean_t is_default = zfs_userquota_isdefault(type);
 
 	*valp = 0;
 
@@ -246,13 +266,18 @@ zfs_userspace_one(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
 	if ((type == ZFS_PROP_USEROBJUSED || type == ZFS_PROP_GROUPOBJUSED ||
 	    type == ZFS_PROP_USEROBJQUOTA || type == ZFS_PROP_GROUPOBJQUOTA ||
 	    type == ZFS_PROP_PROJECTOBJUSED ||
-	    type == ZFS_PROP_PROJECTOBJQUOTA) &&
+	    type == ZFS_PROP_PROJECTOBJQUOTA ||
+	    type == ZFS_PROP_DEFAULTUSEROBJQUOTA ||
+	    type == ZFS_PROP_DEFAULTGROUPOBJQUOTA ||
+	    type == ZFS_PROP_DEFAULTPROJECTOBJQUOTA) &&
 	    !dmu_objset_userobjspace_present(zfsvfs->z_os))
 		return (SET_ERROR(ENOTSUP));
 
 	if (type == ZFS_PROP_PROJECTQUOTA || type == ZFS_PROP_PROJECTUSED ||
 	    type == ZFS_PROP_PROJECTOBJQUOTA ||
-	    type == ZFS_PROP_PROJECTOBJUSED) {
+	    type == ZFS_PROP_PROJECTOBJUSED ||
+	    type == ZFS_PROP_DEFAULTPROJECTQUOTA ||
+	    type == ZFS_PROP_DEFAULTPROJECTOBJQUOTA) {
 		if (!dmu_objset_projectquota_present(zfsvfs->z_os))
 			return (SET_ERROR(ENOTSUP));
 		if (!zpl_is_valid_projid(rid))
@@ -270,7 +295,7 @@ zfs_userspace_one(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
 	}
 
 	err = zfs_id_to_fuidstr(zfsvfs, domain, rid, buf + offset,
-	    sizeof (buf) - offset, B_FALSE);
+	    sizeof (buf) - offset, B_FALSE, is_default);
 	if (err)
 		return (err);
 
@@ -287,46 +312,77 @@ zfs_set_userquota(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
 	char buf[32];
 	int err;
 	dmu_tx_t *tx;
-	uint64_t *objp;
+	uint64_t *objp, *defaultp;
 	boolean_t fuid_dirtied;
+	boolean_t default_quota = zfs_userquota_isdefault(type);
+	zfs_userquota_prop_t zap_type = type;
 
 	if (zfsvfs->z_version < ZPL_VERSION_USERSPACE)
 		return (SET_ERROR(ENOTSUP));
 
 	switch (type) {
 	case ZFS_PROP_USERQUOTA:
+	case ZFS_PROP_DEFAULTUSERQUOTA:
+		if (default_quota) {
+			zap_type = ZFS_PROP_USERQUOTA;
+			defaultp = &zfsvfs->z_defaultuserquota;
+		}
 		objp = &zfsvfs->z_userquota_obj;
 		break;
 	case ZFS_PROP_GROUPQUOTA:
+	case ZFS_PROP_DEFAULTGROUPQUOTA:
+		if (default_quota) {
+			zap_type = ZFS_PROP_GROUPQUOTA;
+			defaultp = &zfsvfs->z_defaultgroupquota;
+		}
 		objp = &zfsvfs->z_groupquota_obj;
 		break;
 	case ZFS_PROP_USEROBJQUOTA:
+	case ZFS_PROP_DEFAULTUSEROBJQUOTA:
+		if (default_quota) {
+			zap_type = ZFS_PROP_USEROBJQUOTA;
+			defaultp = &zfsvfs->z_defaultuserobjquota;
+		}
 		objp = &zfsvfs->z_userobjquota_obj;
 		break;
 	case ZFS_PROP_GROUPOBJQUOTA:
+	case ZFS_PROP_DEFAULTGROUPOBJQUOTA:
+		if (default_quota) {
+			zap_type = ZFS_PROP_GROUPOBJQUOTA;
+			defaultp = &zfsvfs->z_defaultgroupobjquota;
+		}
 		objp = &zfsvfs->z_groupobjquota_obj;
 		break;
 	case ZFS_PROP_PROJECTQUOTA:
+	case ZFS_PROP_DEFAULTPROJECTQUOTA:
 		if (!dmu_objset_projectquota_enabled(zfsvfs->z_os))
 			return (SET_ERROR(ENOTSUP));
 		if (!zpl_is_valid_projid(rid))
 			return (SET_ERROR(EINVAL));
-
+		if (default_quota) {
+			zap_type = ZFS_PROP_PROJECTQUOTA;
+			defaultp = &zfsvfs->z_defaultprojectquota;
+		}
 		objp = &zfsvfs->z_projectquota_obj;
 		break;
 	case ZFS_PROP_PROJECTOBJQUOTA:
+	case ZFS_PROP_DEFAULTPROJECTOBJQUOTA:
 		if (!dmu_objset_projectquota_enabled(zfsvfs->z_os))
 			return (SET_ERROR(ENOTSUP));
 		if (!zpl_is_valid_projid(rid))
 			return (SET_ERROR(EINVAL));
-
+		if (default_quota) {
+			zap_type = ZFS_PROP_PROJECTOBJQUOTA;
+			defaultp = &zfsvfs->z_defaultprojectobjquota;
+		}
 		objp = &zfsvfs->z_projectobjquota_obj;
 		break;
 	default:
 		return (SET_ERROR(EINVAL));
 	}
 
-	err = zfs_id_to_fuidstr(zfsvfs, domain, rid, buf, sizeof (buf), B_TRUE);
+	err = zfs_id_to_fuidstr(zfsvfs, domain, rid, buf, sizeof (buf), B_TRUE,
+	    default_quota);
 	if (err)
 		return (err);
 	fuid_dirtied = zfsvfs->z_fuid_dirty;
@@ -335,7 +391,7 @@ zfs_set_userquota(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
 	dmu_tx_hold_zap(tx, *objp ? *objp : DMU_NEW_OBJECT, B_TRUE, NULL);
 	if (*objp == 0) {
 		dmu_tx_hold_zap(tx, MASTER_NODE_OBJ, B_TRUE,
-		    zfs_userquota_prop_prefixes[type]);
+		    zfs_userquota_prop_prefixes[zap_type]);
 	}
 	if (fuid_dirtied)
 		zfs_fuid_txhold(zfsvfs, tx);
@@ -350,7 +406,7 @@ zfs_set_userquota(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
 		*objp = zap_create(zfsvfs->z_os, DMU_OT_USERGROUP_QUOTA,
 		    DMU_OT_NONE, 0, tx);
 		VERIFY(0 == zap_add(zfsvfs->z_os, MASTER_NODE_OBJ,
-		    zfs_userquota_prop_prefixes[type], 8, 1, objp, tx));
+		    zfs_userquota_prop_prefixes[zap_type], 8, 1, objp, tx));
 	}
 	mutex_exit(&zfsvfs->z_lock);
 
@@ -361,62 +417,11 @@ zfs_set_userquota(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
 	} else {
 		err = zap_update(zfsvfs->z_os, *objp, buf, 8, 1, &quota, tx);
 	}
+	if (default_quota)
+		*defaultp = quota;
 	ASSERT(err == 0);
 	if (fuid_dirtied)
 		zfs_fuid_sync(zfsvfs, tx);
-	dmu_tx_commit(tx);
-	return (err);
-}
-
-int
-zfs_set_defaultquota(zfsvfs_t *zfsvfs, int type, uint64_t quota)
-{
-	int err;
-	dmu_tx_t *tx;
-	uint64_t *objp;
-	const char *name;
-
-	if (type == ZFS_PROP_DEFAULTUSERQUOTA) {
-		objp = &zfsvfs->z_defaultuserquota_obj;
-		name = zfs_prop_to_name(ZFS_PROP_DEFAULTUSERQUOTA);
-	} else if (type == ZFS_PROP_DEFAULTGROUPQUOTA) {
-		objp = &zfsvfs->z_defaultgroupquota_obj;
-		name = zfs_prop_to_name(ZFS_PROP_DEFAULTGROUPQUOTA);
-	} else {
-		/* defaultprojectquota NYI (does it make sense to do so?) */
-		return (SET_ERROR(EINVAL));
-	}
-
-	tx = dmu_tx_create(zfsvfs->z_os);
-	dmu_tx_hold_zap(tx, *objp ? *objp : DMU_NEW_OBJECT, B_TRUE, NULL);
-	if (*objp == 0) {
-		dmu_tx_hold_zap(tx, MASTER_NODE_OBJ, B_TRUE, name);
-	}
-	err = dmu_tx_assign(tx, TXG_WAIT);
-	if (err) {
-		dmu_tx_abort(tx);
-		return (err);
-	}
-
-	mutex_enter(&zfsvfs->z_lock);
-	if (*objp == 0) {
-		*objp = zap_create(zfsvfs->z_os, DMU_OT_USERGROUP_QUOTA,
-		    DMU_OT_NONE, 0, tx);
-		VERIFY(0 == zap_add(zfsvfs->z_os, MASTER_NODE_OBJ, name,
-		    8, 1, objp, tx));
-	}
-	mutex_exit(&zfsvfs->z_lock);
-
-	if (quota == 0) {
-		err = zap_remove(zfsvfs->z_os, *objp, name, tx);
-		if (err == ENOENT)
-			err = 0;
-	} else {
-		err = zap_update(zfsvfs->z_os, *objp, name,
-		    8, 1, &quota, tx);
-	}
-
-	ASSERT(err == 0);
 	dmu_tx_commit(tx);
 	return (err);
 }
@@ -478,9 +483,8 @@ boolean_t
 zfs_id_overblockquota(zfsvfs_t *zfsvfs, uint64_t usedobj, uint64_t id)
 {
 	char buf[20];
-	uint64_t used, quota, quotaobj, defquota, defquotaobj;
-	int err, uerr, derr;
-	const char *name;
+	uint64_t used, quota, quotaobj, default_quota = 0;
+	int err;
 
 	if (usedobj == DMU_PROJECTUSED_OBJECT) {
 		if (!dmu_objset_projectquota_present(zfsvfs->z_os)) {
@@ -494,47 +498,30 @@ zfs_id_overblockquota(zfsvfs_t *zfsvfs, uint64_t usedobj, uint64_t id)
 			return (B_FALSE);
 		}
 		quotaobj = zfsvfs->z_projectquota_obj;
+		default_quota = zfsvfs->z_defaultprojectquota;
 	} else if (usedobj == DMU_USERUSED_OBJECT) {
 		quotaobj = zfsvfs->z_userquota_obj;
-		defquotaobj = zfsvfs->z_defaultuserquota_obj;
-		name = zfs_prop_to_name(ZFS_PROP_DEFAULTUSERQUOTA);
+		default_quota = zfsvfs->z_defaultuserquota;
 	} else if (usedobj == DMU_GROUPUSED_OBJECT) {
 		quotaobj = zfsvfs->z_groupquota_obj;
-		defquotaobj = zfsvfs->z_defaultgroupquota_obj;
-		name = zfs_prop_to_name(ZFS_PROP_DEFAULTGROUPQUOTA);
+		default_quota = zfsvfs->z_defaultgroupquota;
 	} else {
 		return (B_FALSE);
 	}
-
-	/* no quota assigned */
-	if (quotaobj == 0 && defquotaobj == 0) {
+	if (quotaobj == 0 || zfsvfs->z_replay)
 		return (B_FALSE);
-	}
-	if (zfsvfs->z_replay) {
-		return (B_FALSE);
-	}
 
 	(void) snprintf(buf, sizeof (buf), "%llx", (longlong_t)id);
-	derr = zap_lookup(zfsvfs->z_os, defquotaobj, name,
-	    8, 1, &defquota);
-	uerr = zap_lookup(zfsvfs->z_os, quotaobj, buf, 8, 1, &quota);
-
-	/* bail if both id-specific && default lookups failed */
-	if (uerr != 0 && derr != 0)
-		return (B_FALSE);
+	err = zap_lookup(zfsvfs->z_os, quotaobj, buf, 8, 1, &quota);
+	if (err != 0) {
+		if (default_quota == 0)
+			return (B_FALSE);
+		quota = default_quota;
+	}
 
 	err = zap_lookup(zfsvfs->z_os, usedobj, buf, 8, 1, &used);
 	if (err != 0)
 		return (B_FALSE);
-
-	/*
-	 * if a user/group has a specific quota assigned, use that.
-	 * if neither quota...we've already returned false (hopefully).
-	 * if a default quota is set, but no user quota is,
-	 *   use the default.
-	 */
-	if (uerr != 0 && derr == 0 && defquota)
-		quota = defquota;
 
 	return (used >= quota);
 }
@@ -550,7 +537,6 @@ EXPORT_SYMBOL(zpl_get_file_info);
 EXPORT_SYMBOL(zfs_userspace_one);
 EXPORT_SYMBOL(zfs_userspace_many);
 EXPORT_SYMBOL(zfs_set_userquota);
-EXPORT_SYMBOL(zfs_set_defaultquota);
 EXPORT_SYMBOL(zfs_id_overblockquota);
 EXPORT_SYMBOL(zfs_id_overobjquota);
 EXPORT_SYMBOL(zfs_id_overquota);

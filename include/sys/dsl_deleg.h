@@ -67,6 +67,12 @@ extern "C" {
 #define	ZFS_DELEG_PERM_PROJECTQUOTA	"projectquota"
 #define	ZFS_DELEG_PERM_PROJECTOBJUSED	"projectobjused"
 #define	ZFS_DELEG_PERM_PROJECTOBJQUOTA	"projectobjquota"
+#define	ZFS_DELEG_PERM_DEFAULTUSERQUOTA	"defaultuserquota"
+#define	ZFS_DELEG_PERM_DEFAULTGROUPQUOTA	"defaultgroupquota"
+#define	ZFS_DELEG_PERM_DEFAULTPROJECTQUOTA	"defaultprojectquota"
+#define	ZFS_DELEG_PERM_DEFAULTUSEROBJQUOTA	"defaultuserobjquota"
+#define	ZFS_DELEG_PERM_DEFAULTGROUPOBJQUOTA	"defaultgroupobjquota"
+#define	ZFS_DELEG_PERM_DEFAULTPROJECTOBJQUOTA	"defaultprojectobjquota"
 
 /*
  * Note: the names of properties that are marked delegatable are also

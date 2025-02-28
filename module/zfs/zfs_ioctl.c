@@ -2632,25 +2632,6 @@ zfs_prop_set_special(const char *dsname, zprop_source_t source,
 		zfsvfs_rele(zfsvfs, FTAG);
 		break;
 	}
-	case ZFS_PROP_DEFAULTUSERQUOTA:
-	case ZFS_PROP_DEFAULTGROUPQUOTA:
-	{
-		zfsvfs_t *zfsvfs;
-
-		if ((err = zfsvfs_hold(dsname, FTAG, &zfsvfs, B_TRUE)) != 0)
-			break;
-
-		err = zfs_set_defaultquota(zfsvfs, prop, intval);
-		zfsvfs_rele(zfsvfs, FTAG);
-
-		/*
-		 * Set err to -1 to force the zfs_set_prop_nvlist code down the
-		 * default path to set the value in the nvlist.
-		 */
-		if (err == 0)
-			err = -1;
-		break;
-	}
 	default:
 		err = -1;
 	}
@@ -4765,6 +4746,18 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 			    zfs_userquota_prop_prefixes[ZFS_PROP_PROJECTQUOTA];
 			const char *piq_prefix = zfs_userquota_prop_prefixes[\
 			    ZFS_PROP_PROJECTOBJQUOTA];
+			const char *duq_prefix = zfs_userquota_prop_prefixes[\
+			    ZFS_PROP_DEFAULTUSERQUOTA];
+			const char *dgq_prefix = zfs_userquota_prop_prefixes[\
+			    ZFS_PROP_DEFAULTGROUPQUOTA];
+			const char *dpq_prefix = zfs_userquota_prop_prefixes[\
+			    ZFS_PROP_DEFAULTPROJECTQUOTA];
+			const char *duoq_prefix = zfs_userquota_prop_prefixes[\
+			    ZFS_PROP_DEFAULTUSEROBJQUOTA];
+			const char *dgoq_prefix = zfs_userquota_prop_prefixes[\
+			    ZFS_PROP_DEFAULTGROUPOBJQUOTA];
+			const char *dpoq_prefix = zfs_userquota_prop_prefixes[\
+			    ZFS_PROP_DEFAULTPROJECTOBJQUOTA];
 
 			if (strncmp(propname, uq_prefix,
 			    strlen(uq_prefix)) == 0) {
@@ -4784,6 +4777,24 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 			} else if (strncmp(propname, piq_prefix,
 			    strlen(piq_prefix)) == 0) {
 				perm = ZFS_DELEG_PERM_PROJECTOBJQUOTA;
+			} else if (strncmp(propname, duq_prefix,
+			    strlen(duq_prefix)) == 0) {
+				perm = ZFS_DELEG_PERM_DEFAULTUSERQUOTA;
+			} else if (strncmp(propname, dgq_prefix,
+			    strlen(dgq_prefix)) == 0) {
+				perm = ZFS_DELEG_PERM_DEFAULTGROUPQUOTA;
+			} else if (strncmp(propname, dpq_prefix,
+			    strlen(dpq_prefix)) == 0) {
+				perm = ZFS_DELEG_PERM_DEFAULTPROJECTQUOTA;
+			} else if (strncmp(propname, duoq_prefix,
+			    strlen(duoq_prefix)) == 0) {
+				perm = ZFS_DELEG_PERM_DEFAULTUSEROBJQUOTA;
+			} else if (strncmp(propname, dgoq_prefix,
+			    strlen(dgoq_prefix)) == 0) {
+				perm = ZFS_DELEG_PERM_DEFAULTGROUPOBJQUOTA;
+			} else if (strncmp(propname, dpoq_prefix,
+			    strlen(dpoq_prefix)) == 0) {
+				perm = ZFS_DELEG_PERM_DEFAULTPROJECTOBJQUOTA;
 			} else {
 				/* {USER|GROUP|PROJECT}USED are read-only */
 				return (SET_ERROR(EINVAL));

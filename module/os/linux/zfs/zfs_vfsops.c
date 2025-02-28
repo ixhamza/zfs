@@ -715,6 +715,15 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 	else if (error != 0)
 		return (error);
 
+	if (zfsvfs->z_userquota_obj) {
+		error = zap_lookup(os, zfsvfs->z_userquota_obj,
+		    "default", 8, 1, &zfsvfs->z_defaultuserquota);
+		if (error == ENOENT)
+			zfsvfs->z_defaultuserquota = 0;
+		else if (error != 0)
+			return (error);
+	}
+
 	error = zap_lookup(os, MASTER_NODE_OBJ,
 	    zfs_userquota_prop_prefixes[ZFS_PROP_GROUPQUOTA],
 	    8, 1, &zfsvfs->z_groupquota_obj);
@@ -722,6 +731,15 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 		zfsvfs->z_groupquota_obj = 0;
 	else if (error != 0)
 		return (error);
+
+	if (zfsvfs->z_groupquota_obj) {
+		error = zap_lookup(os, zfsvfs->z_groupquota_obj,
+		    "default", 8, 1, &zfsvfs->z_defaultgroupquota);
+		if (error == ENOENT)
+			zfsvfs->z_defaultgroupquota = 0;
+		else if (error != 0)
+			return (error);
+	}
 
 	error = zap_lookup(os, MASTER_NODE_OBJ,
 	    zfs_userquota_prop_prefixes[ZFS_PROP_PROJECTQUOTA],
@@ -731,6 +749,15 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 	else if (error != 0)
 		return (error);
 
+	if (zfsvfs->z_projectquota_obj) {
+		error = zap_lookup(os, zfsvfs->z_projectquota_obj,
+		    "default", 8, 1, &zfsvfs->z_defaultprojectquota);
+		if (error == ENOENT)
+			zfsvfs->z_defaultprojectquota = 0;
+		else if (error != 0)
+			return (error);
+	}
+
 	error = zap_lookup(os, MASTER_NODE_OBJ,
 	    zfs_userquota_prop_prefixes[ZFS_PROP_USEROBJQUOTA],
 	    8, 1, &zfsvfs->z_userobjquota_obj);
@@ -738,6 +765,15 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 		zfsvfs->z_userobjquota_obj = 0;
 	else if (error != 0)
 		return (error);
+
+	if (zfsvfs->z_userobjquota_obj) {
+		error = zap_lookup(os, zfsvfs->z_userobjquota_obj,
+		    "default", 8, 1, &zfsvfs->z_defaultuserobjquota);
+		if (error == ENOENT)
+			zfsvfs->z_defaultuserobjquota = 0;
+		else if (error != 0)
+			return (error);
+	}
 
 	error = zap_lookup(os, MASTER_NODE_OBJ,
 	    zfs_userquota_prop_prefixes[ZFS_PROP_GROUPOBJQUOTA],
@@ -747,6 +783,15 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 	else if (error != 0)
 		return (error);
 
+	if (zfsvfs->z_groupobjquota_obj) {
+		error = zap_lookup(os, zfsvfs->z_groupobjquota_obj,
+		    "default", 8, 1, &zfsvfs->z_defaultgroupobjquota);
+		if (error == ENOENT)
+			zfsvfs->z_defaultgroupobjquota = 0;
+		else if (error != 0)
+			return (error);
+	}
+
 	error = zap_lookup(os, MASTER_NODE_OBJ,
 	    zfs_userquota_prop_prefixes[ZFS_PROP_PROJECTOBJQUOTA],
 	    8, 1, &zfsvfs->z_projectobjquota_obj);
@@ -755,21 +800,14 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 	else if (error != 0)
 		return (error);
 
-	error = zap_lookup(os, MASTER_NODE_OBJ,
-	    zfs_prop_to_name(ZFS_PROP_DEFAULTUSERQUOTA),
-	    8, 1, &zfsvfs->z_defaultuserquota_obj);
-	if (error == ENOENT)
-		zfsvfs->z_defaultuserquota_obj = 0;
-	else if (error != 0)
-		return (error);
-
-	error = zap_lookup(os, MASTER_NODE_OBJ,
-	    zfs_prop_to_name(ZFS_PROP_DEFAULTGROUPQUOTA),
-	    8, 1, &zfsvfs->z_defaultgroupquota_obj);
-	if (error == ENOENT)
-		zfsvfs->z_defaultgroupquota_obj = 0;
-	else if (error != 0)
-		return (error);
+	if (zfsvfs->z_projectobjquota_obj) {
+		error = zap_lookup(os, zfsvfs->z_projectobjquota_obj,
+		    "default", 8, 1, &zfsvfs->z_defaultprojectobjquota);
+		if (error == ENOENT)
+			zfsvfs->z_defaultprojectobjquota = 0;
+		else if (error != 0)
+			return (error);
+	}
 
 	error = zap_lookup(os, MASTER_NODE_OBJ, ZFS_FUID_TABLES, 8, 1,
 	    &zfsvfs->z_fuid_obj);
@@ -1049,7 +1087,7 @@ zfs_statfs_project(zfsvfs_t *zfsvfs, znode_t *zp, struct kstatfs *statp,
 
 	strlcpy(buf, DMU_OBJACCT_PREFIX, DMU_OBJACCT_PREFIX_LEN + 1);
 	err = zfs_id_to_fuidstr(zfsvfs, NULL, zp->z_projid, buf + offset,
-	    sizeof (buf) - offset, B_FALSE);
+	    sizeof (buf) - offset, B_FALSE, B_FALSE); // AMEER?
 	if (err)
 		return (err);
 
