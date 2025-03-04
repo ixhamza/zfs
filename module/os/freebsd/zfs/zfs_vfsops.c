@@ -800,6 +800,7 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 {
 	int error;
 	uint64_t val;
+	struct dsl_dataset *ds = dmu_objset_ds(os);
 
 	zfsvfs->z_max_blksz = SPA_OLD_MAXBLOCKSIZE;
 	zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
@@ -831,10 +832,14 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 		return (error);
 	zfsvfs->z_case = (uint_t)val;
 
-	error = zfs_get_zplprop(os, ZFS_PROP_ACLTYPE, &val);
-	if (error != 0)
-		return (error);
-	zfsvfs->z_acl_type = (uint_t)val;
+	dsl_pool_config_enter(dmu_objset_pool(os), FTAG);
+
+	error = dsl_prop_get_int_ds(ds, zfs_prop_to_name(ZFS_PROP_ACLTYPE),
+	    (uint64_t*) &zfsvfs->z_acl_type);
+	if (error == ENOENT)
+		zfsvfs->z_acl_type = ZFS_ACLTYPE_NFSV4;
+	else if (error != 0)
+		goto out;
 
 	/*
 	 * Fold case on file systems that are always or sometimes case
@@ -853,12 +858,15 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 		error = zap_lookup(os, MASTER_NODE_OBJ, ZFS_SA_ATTRS, 8, 1,
 		    &sa_obj);
 		if (error != 0)
-			return (error);
+			goto out;
 
-		error = zfs_get_zplprop(os, ZFS_PROP_XATTR, &val);
-		if (error == 0 && val == ZFS_XATTR_SA)
+		error = dsl_prop_get_int_ds(ds,
+		    zfs_prop_to_name(ZFS_PROP_XATTR), &val);
+		if ((error == 0) && (val == ZFS_XATTR_SA))
 			zfsvfs->z_xattr_sa = B_TRUE;
 	}
+
+	dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
 
 	error = sa_setup(os, sa_obj, zfs_attr_table, ZPL_END,
 	    &zfsvfs->z_attr_table);
@@ -954,6 +962,9 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 	    !(zfsvfs->z_norm & ~U8_TEXTPREP_TOUPPER));
 
 	return (0);
+out:
+	dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
+	return (error);
 }
 
 taskq_t *zfsvfs_taskq;

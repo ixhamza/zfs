@@ -376,13 +376,6 @@ zfs_get_zplprop(objset_t *os, zfs_prop_t prop, uint64_t *value)
 		case ZFS_PROP_CASE:
 			*value = ZFS_CASE_SENSITIVE;
 			break;
-		case ZFS_PROP_ACLTYPE:
-#ifdef __FreeBSD__
-			*value = ZFS_ACLTYPE_NFSV4;
-#else
-			*value = ZFS_ACLTYPE_OFF;
-#endif
-			break;
 		default:
 			return (error);
 		}
