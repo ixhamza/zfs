@@ -439,6 +439,48 @@ snapdir_changed_cb(void *arg, uint64_t newval)
 }
 
 static void
+default_userquota_changed_cb(void *arg, uint64_t newval)
+{
+	zfsvfs_t *zfsvfs = arg;
+	zfsvfs->z_defaultuserquota = newval;
+}
+
+static void
+default_groupquota_changed_cb(void *arg, uint64_t newval)
+{
+	zfsvfs_t *zfsvfs = arg;
+	zfsvfs->z_defaultgroupquota = newval;
+}
+
+static void
+default_projectquota_changed_cb(void *arg, uint64_t newval)
+{
+	zfsvfs_t *zfsvfs = arg;
+	zfsvfs->z_defaultprojectquota = newval;
+}
+
+static void
+default_userobjquota_changed_cb(void *arg, uint64_t newval)
+{
+	zfsvfs_t *zfsvfs = arg;
+	zfsvfs->z_defaultuserobjquota = newval;
+}
+
+static void
+default_groupobjquota_changed_cb(void *arg, uint64_t newval)
+{
+	zfsvfs_t *zfsvfs = arg;
+	zfsvfs->z_defaultgroupobjquota = newval;
+}
+
+static void
+default_projectobjquota_changed_cb(void *arg, uint64_t newval)
+{
+	zfsvfs_t *zfsvfs = arg;
+	zfsvfs->z_defaultprojectobjquota = newval;
+}
+
+static void
 acl_mode_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
@@ -520,6 +562,24 @@ zfs_register_callbacks(vfs_t *vfsp)
 	    zfs_prop_to_name(ZFS_PROP_NBMAND), nbmand_changed_cb, zfsvfs);
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_LONGNAME), longname_changed_cb, zfsvfs);
+	error = error ? error : dsl_prop_register(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTUSERQUOTA),
+	    default_userquota_changed_cb, zfsvfs);
+	error = error ? error : dsl_prop_register(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTGROUPQUOTA),
+	    default_groupquota_changed_cb, zfsvfs);
+	error = error ? error : dsl_prop_register(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTPROJECTQUOTA),
+	    default_projectquota_changed_cb, zfsvfs);
+	error = error ? error : dsl_prop_register(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTUSEROBJQUOTA),
+	    default_userobjquota_changed_cb, zfsvfs);
+	error = error ? error : dsl_prop_register(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTGROUPOBJQUOTA),
+	    default_groupobjquota_changed_cb, zfsvfs);
+	error = error ? error : dsl_prop_register(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTPROJECTOBJQUOTA),
+	    default_projectobjquota_changed_cb, zfsvfs);
 	dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
 	if (error)
 		goto unregister;
@@ -672,7 +732,7 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 	dsl_pool_config_enter(dmu_objset_pool(os), FTAG);
 
 	error = dsl_prop_get_int_ds(ds, zfs_prop_to_name(ZFS_PROP_ACLTYPE),
-	    (uint64_t*) &zfsvfs->z_acl_type);
+	    (uint64_t *)&zfsvfs->z_acl_type);
 	if (error == ENOENT)
 		zfsvfs->z_acl_type = ZFS_ACLTYPE_OFF;
 	else if (error != 0)
@@ -702,6 +762,54 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 		if ((error == 0) && (val == ZFS_XATTR_SA))
 			zfsvfs->z_xattr_sa = B_TRUE;
 	}
+
+	error = dsl_prop_get_int_ds(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTUSERQUOTA),
+	    &zfsvfs->z_defaultuserquota);
+	if (error == ENOENT)
+		zfsvfs->z_defaultuserquota = 0;
+	else if (error != 0)
+		goto out;
+
+	error = dsl_prop_get_int_ds(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTGROUPQUOTA),
+	    &zfsvfs->z_defaultgroupquota);
+	if (error == ENOENT)
+		zfsvfs->z_defaultgroupquota = 0;
+	else if (error != 0)
+		goto out;
+
+	error = dsl_prop_get_int_ds(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTPROJECTQUOTA),
+	    &zfsvfs->z_defaultprojectquota);
+	if (error == ENOENT)
+		zfsvfs->z_defaultprojectquota = 0;
+	else if (error != 0)
+		goto out;
+
+	error = dsl_prop_get_int_ds(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTUSEROBJQUOTA),
+	    &zfsvfs->z_defaultuserobjquota);
+	if (error == ENOENT)
+		zfsvfs->z_defaultuserobjquota = 0;
+	else if (error != 0)
+		goto out;
+
+	error = dsl_prop_get_int_ds(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTGROUPOBJQUOTA),
+	    &zfsvfs->z_defaultgroupobjquota);
+	if (error == ENOENT)
+		zfsvfs->z_defaultgroupobjquota = 0;
+	else if (error != 0)
+		goto out;
+
+	error = dsl_prop_get_int_ds(ds,
+	    zfs_prop_to_name(ZFS_PROP_DEFAULTPROJECTOBJQUOTA),
+	    &zfsvfs->z_defaultprojectobjquota);
+	if (error == ENOENT)
+		zfsvfs->z_defaultprojectobjquota = 0;
+	else if (error != 0)
+		goto out;
 
 	dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
 
