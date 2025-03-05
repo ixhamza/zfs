@@ -70,8 +70,8 @@ log_must eval "zfs list -r \
 	-o defaultuserquota,defaultgroupquota \
 	$TESTPOOL >/dev/null 2>&1"
 
-log_mustnot check_quota "defaultuserquota" $TESTPOOL/fs@snap "$UQUOTA_SIZE"
-log_mustnot check_quota "defaultgroupquota" $TESTPOOL/fs@snap "$GQUOTA_SIZE"
+log_must check_quota "defaultuserquota" $TESTPOOL/fs@snap "$UQUOTA_SIZE"
+log_must check_quota "defaultgroupquota" $TESTPOOL/fs@snap "$GQUOTA_SIZE"
 
 log_note "clone fs gets its parent's default{user|group}quota initially"
 log_must zfs clone \

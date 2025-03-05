@@ -68,8 +68,8 @@ log_must check_quota "defaultgroupquota" $QFS "$GQUOTA_SIZE"
 log_must zfs snapshot $snap_fs
 
 log_note "check the snapshot $snap_fs default{user|group}quota"
-log_mustnot check_quota "defaultuserquota" $snap_fs "$UQUOTA_SIZE"
-log_mustnot check_quota "defaultgroupquota" $snap_fs "$GQUOTA_SIZE"
+log_must check_quota "defaultuserquota" $snap_fs "$UQUOTA_SIZE"
+log_must check_quota "defaultgroupquota" $snap_fs "$GQUOTA_SIZE"
 
 log_note  "set default{user|group}quota to $snap_fs should fail"
 log_mustnot zfs set defaultuserquota=$SNAP_QUOTA $snap_fs
@@ -83,7 +83,7 @@ log_must check_quota "defaultuserquota" $QFS $TEST_QUOTA
 log_must check_quota "defaultgroupquota" $QFS $TEST_QUOTA
 
 log_note "check the snapshot $snap_fs default{user|group}quota"
-log_mustnot check_quota "defaultuserquota" $snap_fs "$UQUOTA_SIZE"
-log_mustnot check_quota "defaultgroupquota" $snap_fs "$GQUOTA_SIZE"
+log_must check_quota "defaultuserquota" $snap_fs "$UQUOTA_SIZE"
+log_must check_quota "defaultgroupquota" $snap_fs "$GQUOTA_SIZE"
 
 log_pass "Check the snapshot's default{user|group}quota passed as expected"
