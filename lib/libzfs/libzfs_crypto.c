@@ -1818,3 +1818,15 @@ error:
 	zfs_error(zhp->zfs_hdl, EZFS_CRYPTOFAILED, errbuf);
 	return (ret);
 }
+
+int
+zfs_is_encrypted(zfs_handle_t *zhp, boolean_t *val)
+{
+	if (zhp->zfs_dmustats.dds_is_encrypted & 0x80) {
+		if (!val)
+			return (EINVAL);
+		*val = zhp->zfs_dmustats.dds_is_encrypted & 1;
+		return (0);
+	}
+	return (ENOTSUP);
+}
