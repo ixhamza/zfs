@@ -32,6 +32,14 @@
 #include <sys/mount.h> /* for BLKGETSIZE64 */
 
 /*
+ * statx introduced in GLIBC 2.28
+ */
+#if defined(__GLIBC__) && __GLIBC_PREREQ(2, 28)
+#include <linux/stat.h>
+#define	HAVE_STATX 1
+#endif
+
+/*
  * Emulate Solaris' behavior of returning the block device size in fstat64().
  */
 static inline int
