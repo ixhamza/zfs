@@ -31,6 +31,9 @@
 
 #include <sys/mount.h> /* for BLKGETSIZE64 */
 
+#include <fcntl.h> /* For statx */
+#include <linux/stat.h> /* For statx */
+
 /*
  * Emulate Solaris' behavior of returning the block device size in fstat64().
  */
