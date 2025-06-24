@@ -13,38 +13,42 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.action == 'opened' && github.event.pull_request.draft }}
     steps:
+      - uses: actions/checkout@v4
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr edit $ISSUE --add-label "Status: Work in Progress"
+          gh pr edit $ISSUE --repo $GITHUB_REPOSITORY --add-label "Status: Work in Progress"
 
   push:
     runs-on: ubuntu-latest
     if: ${{ github.event.action == 'synchronize' || github.event.action == 'reopened' }}
     steps:
+      - uses: actions/checkout@v4
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr edit $ISSUE --remove-label "Status: Accepted,Status: Inactive,Status: Revision Needed,Status: Stale"
+          gh pr edit $ISSUE  --repo $GITHUB_REPOSITORY --remove-label "Status: Accepted,Status: Inactive,Status: Revision Needed,Status: Stale"
 
   draft:
     runs-on: ubuntu-latest
     if: ${{ github.event.action == 'converted_to_draft' }}
     steps:
+      - uses: actions/checkout@v4
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr edit $ISSUE --remove-label "Status: Accepted,Status: Code Review Needed,Status: Inactive,Status: Revision Needed,Status: Stale" --add-label "Status: Work in Progress"
+          gh pr edit $ISSUE --repo $GITHUB_REPOSITORY --remove-label "Status: Accepted,Status: Code Review Needed,Status: Inactive,Status: Revision Needed,Status: Stale" --add-label "Status: Work in Progress"
 
   rfr:
     runs-on: ubuntu-latest
     if: ${{ github.event.action == 'ready_for_review' }}
     steps:
+      - uses: actions/checkout@v4
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr edit $ISSUE --remove-label "Status: Accepted,Status: Inactive,Status: Revision Needed,Status: Stale,Status: Work in Progress" --add-label "Status: Code Review Needed"
+          gh pr edit $ISSUE --repo $GITHUB_REPOSITORY --remove-label "Status: Accepted,Status: Inactive,Status: Revision Needed,Status: Stale,Status: Work in Progress" --add-label "Status: Code Review Needed"
