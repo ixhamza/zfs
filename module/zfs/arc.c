@@ -443,7 +443,7 @@ static const unsigned long zfs_arc_pool_dirty_percent = 20;
 /*
  * Enable or disable compressed arc buffers.
  */
-int zfs_compressed_arc_enabled = B_TRUE;
+int zfs_compressed_arc_enabled = B_FALSE;
 
 /*
  * Balance between metadata and data on ghost hits.  Values above 100
@@ -842,7 +842,7 @@ int l2arc_noprefetch = B_TRUE;			/* don't cache prefetch bufs */
 int l2arc_feed_again = B_TRUE;			/* turbo warmup */
 int l2arc_norw = B_FALSE;			/* no reads during writes */
 static uint_t l2arc_meta_percent = 33;	/* limit on headers size */
-static uint_t l2arc_boost_percent = 25;	/* L2ARC usage threshold for boost */
+//static uint_t l2arc_boost_percent = 25;	/* L2ARC usage threshold for boost */
 
 /*
  * L2ARC Internals
@@ -8455,30 +8455,30 @@ l2arc_write_eligible(uint64_t spa_guid, arc_buf_hdr_t *hdr)
 	return (B_TRUE);
 }
 
-/*
- * Calculate L2ARC device usage percentage for boost logic
- */
-static uint_t
-l2arc_device_usage_percent(l2arc_dev_t *dev)
-{
-	uint64_t dev_size, dev_used;
-
-	if (dev->l2ad_vdev == NULL)
-		return (100);
-
-	dev_size = dev->l2ad_end - dev->l2ad_start;
-	if (dev_size == 0)
-		return (100);
-
-	if (dev->l2ad_hand >= dev->l2ad_evict) {
-		dev_used = dev->l2ad_hand - dev->l2ad_evict;
-	} else {
-		dev_used = (dev->l2ad_end - dev->l2ad_evict) +
-		    (dev->l2ad_hand - dev->l2ad_start);
-	}
-
-	return ((dev_used * 100) / dev_size);
-}
+///*
+// * Calculate L2ARC device usage percentage for boost logic
+// */
+//static uint_t
+//l2arc_device_usage_percent(l2arc_dev_t *dev)
+//{
+//	uint64_t dev_size, dev_used;
+//
+//	if (dev->l2ad_vdev == NULL)
+//		return (100);
+//
+//	dev_size = dev->l2ad_end - dev->l2ad_start;
+//	if (dev_size == 0)
+//		return (100);
+//
+//	if (dev->l2ad_hand >= dev->l2ad_evict) {
+//		dev_used = dev->l2ad_hand - dev->l2ad_evict;
+//	} else {
+//		dev_used = (dev->l2ad_end - dev->l2ad_evict) +
+//		    (dev->l2ad_hand - dev->l2ad_start);
+//	}
+//
+//	return ((dev_used * 100) / dev_size);
+//}
 
 /*
  * Write smoothing with moving average for stable speeds
@@ -8567,8 +8567,8 @@ l2arc_write_size(l2arc_dev_t *dev)
 	 * Use boost rates when L2ARC usage is below threshold, regardless
 	 * of ARC warmup state. This makes sense with persistent L2ARC.
 	 */
-	if (l2arc_device_usage_percent(dev) < l2arc_boost_percent)
-		size += l2arc_write_boost;
+//	if (l2arc_device_usage_percent(dev) < l2arc_boost_percent)
+//		size += l2arc_write_boost;
 
 	/*
 	 * Apply write smoothing for stable speed over longer periods.
@@ -9898,7 +9898,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	/*
 	 * Copy buffers for L2ARC writing using modernized marker-based approach
 	 */
-	for (int pass = 0; pass < L2ARC_FEED_TYPES; pass++) {
+	for (int pass = 2; pass < L2ARC_FEED_TYPES; pass++) {
 		/*
 		 * pass == 0: MFU meta
 		 * pass == 1: MRU meta
@@ -9933,8 +9933,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			continue;
 
 		headroom = target_sz * l2arc_headroom;
-		if (zfs_compressed_arc_enabled)
-			headroom = (headroom * l2arc_headroom_boost) / 100;
+//		if (zfs_compressed_arc_enabled)
+//			headroom = (headroom * l2arc_headroom_boost) / 100;
 
 		/* Scan multilist using even-depth algorithm */
 		full = l2arc_scan_multilist(spa, dev, ml, pass, target_sz,
