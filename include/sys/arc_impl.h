@@ -42,6 +42,25 @@ extern "C" {
 #endif
 
 /*
+ * L2ARC feed types (MFU/MRU metadata/data)
+ */
+#define	L2ARC_FEED_TYPES	4
+
+/*
+ * Forward declaration for l2arc_dev_t
+ */
+typedef struct l2arc_dev l2arc_dev_t;
+
+/*
+ * L2ARC delete-rewrite queue entry
+ */
+typedef struct l2arc_rewrite_entry {
+	arc_buf_hdr_t		*lre_hdr;
+	l2arc_dev_t		*lre_old_dev;
+	list_node_t		lre_node;
+} l2arc_rewrite_entry_t;
+
+/*
  * Note that buffers can be in one of 6 states:
  *	ARC_anon	- anonymous (discussed below)
  *	ARC_mru		- recently used, currently cached
@@ -410,6 +429,23 @@ typedef struct l2arc_dev {
 	boolean_t		l2ad_rebuild_began;
 	uint64_t		l2ad_log_entries;   /* entries per log blk  */
 	uint64_t		l2ad_evict;	 /* evicted offset in bytes */
+	/*
+	 * Marker-based scanning: track position in each ARC list sublist
+	 * to avoid redundant tail scanning and enable even-depth traversal
+	 */
+	struct {
+		int		current_sublist;  /* round-robin index */
+		arc_buf_hdr_t	**markers;	  /* per-sublist positions */
+		int		num_sublists;	  /* total sublists */
+	} l2ad_feed_markers[L2ARC_FEED_TYPES];
+	/* Queue for safe delete-and-rewrite operations */
+	list_t			l2ad_rewrite_queue;
+	/* Write smoothing for stable speed over time */
+	uint64_t		l2ad_write_history[8];
+	uint_t			l2ad_write_idx;
+	/* Target write rate persistence */
+	uint64_t		l2ad_target_write_rate;
+	hrtime_t		l2ad_last_write_time;
 	/* List of pointers to log blocks present in the L2ARC device */
 	list_t			l2ad_lbptr_list;
 	/*
