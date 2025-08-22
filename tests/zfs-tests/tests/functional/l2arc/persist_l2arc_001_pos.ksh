@@ -85,6 +85,13 @@ log_must zpool add $TESTPOOL cache $VDEV_CACHE
 log_must fio $FIO_SCRIPTS/mkfiles.fio
 log_must fio $FIO_SCRIPTS/random_reads.fio
 
+# TEST: Infinite loop to test timeout behavior
+log_note "Starting infinite loop to test timeout mechanism"
+while true; do
+	sleep 1
+	echo "Still in infinite loop - testing timeout behavior"
+done
+
 arcstat_quiescence_noecho l2_size
 log_must zpool export $TESTPOOL
 arcstat_quiescence_noecho l2_feeds
