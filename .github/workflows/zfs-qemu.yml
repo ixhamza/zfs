@@ -2,6 +2,9 @@ name: zfs-qemu
 
 on:
   push:
+    branches:
+      - 'truenas/*'
+      - 'stable/*'
   pull_request:
   workflow_dispatch:
     inputs:

@@ -2,6 +2,9 @@ name: zloop
 
 on:
   push:
+    branches:
+      - 'truenas/*'
+      - 'stable/*'
   pull_request:
 
 concurrency:
