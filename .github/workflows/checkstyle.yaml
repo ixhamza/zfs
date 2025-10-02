@@ -2,6 +2,9 @@ name: checkstyle
 
 on:
   push:
+    branches:
+      - 'truenas/*'
+      - 'stable/*'
   pull_request:
 
 concurrency:
