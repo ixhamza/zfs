@@ -1228,8 +1228,10 @@ dsl_dataset_create_sync_dd(dsl_dir_t *dd, dsl_dataset_t *origin,
 		 * Inherit flags that describe the dataset's contents
 		 * (INCONSISTENT) or properties (Case Insensitive).
 		 */
+		// AMEER: Incosistent Set here, safe as inherit should not
+		// affect immutable property
 		dsphys->ds_flags |= dsl_dataset_phys(origin)->ds_flags &
-		    (DS_FLAG_INCONSISTENT | DS_FLAG_CI_DATASET);
+		    (DS_FLAG_INCONSISTENT | DS_FLAG_CI_DATASET); // AMEER
 
 		for (spa_feature_t f = 0; f < SPA_FEATURES; f++) {
 			if (zfeature_active(f, origin->ds_feature[f])) {

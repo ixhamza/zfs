@@ -2286,31 +2286,39 @@ zfs_ioc_objset_zplprops(zfs_cmd_t *zc)
 	/*
 	 * NB: nvl_add_zplprop() will read the objset contents,
 	 * which we aren't supposed to do with a DS_MODE_USER
-	 * hold, because it could be inconsistent.
+	 * hold, because it could be inconsistent. However, ONETIME
+	 * properties are immutable after creation and safe to read.
 	 */
 	if (zc->zc_nvlist_dst != 0 &&
-	    !zc->zc_objset_stats.dds_inconsistent &&
 	    dmu_objset_type(os) == DMU_OST_ZFS) {
 		nvlist_t *nv;
 
 		VERIFY0(nvlist_alloc(&nv, NV_UNIQUE_NAME, KM_SLEEP));
+
+		/* Always add ONETIME properties */
 		if ((err = nvl_add_zplprop(os, nv, ZFS_PROP_VERSION)) == 0 &&
 		    (err = nvl_add_zplprop(os, nv, ZFS_PROP_NORMALIZE)) == 0 &&
 		    (err = nvl_add_zplprop(os, nv, ZFS_PROP_UTF8ONLY)) == 0 &&
-		    (err = nvl_add_zplprop(os, nv, ZFS_PROP_CASE)) == 0 &&
-		    (err = nvl_add_zplprop(os, nv,
-		    ZFS_PROP_DEFAULTUSERQUOTA)) == 0 &&
-		    (err = nvl_add_zplprop(os, nv,
-		    ZFS_PROP_DEFAULTGROUPQUOTA)) == 0 &&
-		    (err = nvl_add_zplprop(os, nv,
-		    ZFS_PROP_DEFAULTPROJECTQUOTA)) == 0 &&
-		    (err = nvl_add_zplprop(os, nv,
-		    ZFS_PROP_DEFAULTUSEROBJQUOTA)) == 0 &&
-		    (err = nvl_add_zplprop(os, nv,
-		    ZFS_PROP_DEFAULTGROUPOBJQUOTA)) == 0 &&
-		    (err = nvl_add_zplprop(os, nv,
-		    ZFS_PROP_DEFAULTPROJECTOBJQUOTA)) == 0)
-			err = put_nvlist(zc, nv);
+		    (err = nvl_add_zplprop(os, nv, ZFS_PROP_CASE)) == 0) {
+			/* Add other properties only if consistent */
+			if (!zc->zc_objset_stats.dds_inconsistent &&
+			    (err = nvl_add_zplprop(os, nv,
+			    ZFS_PROP_DEFAULTUSERQUOTA)) == 0 &&
+			    (err = nvl_add_zplprop(os, nv,
+			    ZFS_PROP_DEFAULTGROUPQUOTA)) == 0 &&
+			    (err = nvl_add_zplprop(os, nv,
+			    ZFS_PROP_DEFAULTPROJECTQUOTA)) == 0 &&
+			    (err = nvl_add_zplprop(os, nv,
+			    ZFS_PROP_DEFAULTUSEROBJQUOTA)) == 0 &&
+			    (err = nvl_add_zplprop(os, nv,
+			    ZFS_PROP_DEFAULTGROUPOBJQUOTA)) == 0 &&
+			    (err = nvl_add_zplprop(os, nv,
+			    ZFS_PROP_DEFAULTPROJECTOBJQUOTA)) == 0) {
+				/* All properties added */
+			}
+			if (err == 0)
+				err = put_nvlist(zc, nv);
+		}
 		nvlist_free(nv);
 	} else {
 		err = SET_ERROR(ENOENT);

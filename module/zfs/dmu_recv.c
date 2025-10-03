@@ -1016,6 +1016,9 @@ dmu_recv_begin_sync(void *arg, dmu_tx_t *tx)
 	}
 
 	dmu_buf_will_dirty(newds->ds_dbuf, tx);
+
+	// AMEER: Incosistent Set here, safe as receive should not affect
+	// immutable property
 	dsl_dataset_phys(newds)->ds_flags |= DS_FLAG_INCONSISTENT;
 
 	/*

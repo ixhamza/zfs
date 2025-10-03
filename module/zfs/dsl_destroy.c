@@ -1201,6 +1201,8 @@ dsl_destroy_head_begin_sync(void *arg, dmu_tx_t *tx)
 
 	/* Mark it as inconsistent on-disk, in case we crash */
 	dmu_buf_will_dirty(ds->ds_dbuf, tx);
+	// AMEER: Incosistent Set here, need more digging if it's safe to read
+	// immutable property when incosistent set from this context
 	dsl_dataset_phys(ds)->ds_flags |= DS_FLAG_INCONSISTENT;
 
 	spa_history_log_internal_ds(ds, "destroy begin", tx, " ");
