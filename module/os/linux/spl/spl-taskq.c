@@ -660,6 +660,58 @@ taskq_cancel_id(taskq_t *tq, taskqid_t id)
 }
 EXPORT_SYMBOL(taskq_cancel_id);
 
+/*
+ * taskq_cancel_id_async() is a non-blocking variant of taskq_cancel_id().
+ * It will cancel a pending task, but if the task is currently active, it
+ * will return EBUSY immediately without waiting for the task to complete.
+ * This is useful when the caller cannot afford to block indefinitely, such
+ * as when cancelling from a context that the task itself might be waiting for.
+ */
+int
+taskq_cancel_id_async(taskq_t *tq, taskqid_t id)
+{
+	taskq_ent_t *t;
+	int rc = ENOENT;
+	unsigned long flags;
+
+	ASSERT(tq);
+
+	spin_lock_irqsave_nested(&tq->tq_lock, flags, tq->tq_lock_class);
+	t = taskq_find(tq, id);
+	if (t && t != ERR_PTR(-EBUSY)) {
+		list_del_init(&t->tqent_list);
+		TQSTAT_DEC_LIST(tq, t);
+		TQSTAT_DEC(tq, tasks_total);
+
+		t->tqent_flags |= TQENT_FLAG_CANCEL;
+		TQSTAT_INC(tq, tasks_cancelled);
+
+		if (tq->tq_lowest_id == t->tqent_id) {
+			tq->tq_lowest_id = taskq_lowest_id(tq);
+			ASSERT3S(tq->tq_lowest_id, >, t->tqent_id);
+		}
+
+		if (timer_pending(&t->tqent_timer)) {
+			spin_unlock_irqrestore(&tq->tq_lock, flags);
+			timer_delete_sync(&t->tqent_timer);
+			spin_lock_irqsave_nested(&tq->tq_lock, flags,
+			    tq->tq_lock_class);
+		}
+
+		if (!(t->tqent_flags & TQENT_FLAG_PREALLOC))
+			task_done(tq, t);
+
+		rc = 0;
+	} else if (t == ERR_PTR(-EBUSY)) {
+		/* Task is active - return immediately without waiting */
+		rc = EBUSY;
+	}
+	spin_unlock_irqrestore(&tq->tq_lock, flags);
+
+	return (rc);
+}
+EXPORT_SYMBOL(taskq_cancel_id_async);
+
 static int taskq_thread_spawn(taskq_t *tq);
 
 taskqid_t

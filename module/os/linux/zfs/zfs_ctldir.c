@@ -361,21 +361,24 @@ snapentry_expire(void *data)
 /*
  * Cancel an automatic unmount of a snapname.  This callback is responsible
  * for dropping the reference on the zfs_snapentry_t which was taken when
- * during dispatch.
+ * during dispatch. Uses non-blocking cancellation to avoid deadlock.
  */
 static void
 zfsctl_snapshot_unmount_cancel(zfs_snapentry_t *se)
 {
 	int err = 0;
 	rw_enter(&se->se_taskqid_lock, RW_WRITER);
-	err = taskq_cancel_id(system_delay_taskq, se->se_taskqid);
+	err = taskq_cancel_id_async(system_delay_taskq, se->se_taskqid);
 	/*
-	 * if we get ENOENT, the taskq couldn't be found to be
-	 * canceled, so we can just mark it as invalid because
-	 * it's already gone. If we got EBUSY, then we already
-	 * blocked until it was gone _anyway_, so we don't care.
+	 * If we get 0, we successfully cancelled a pending task.
+	 * If we get ENOENT, the task already finished and cleared taskqid.
+	 * In both cases, it's safe to mark taskqid as invalid.
+	 *
+	 * If we get EBUSY, the task is currently active. Don't modify
+	 * taskqid - the running task owns it and will clear it when done.
 	 */
-	se->se_taskqid = TASKQID_INVALID;
+	if (err != EBUSY)
+		se->se_taskqid = TASKQID_INVALID;
 	rw_exit(&se->se_taskqid_lock);
 	if (err == 0) {
 		zfsctl_snapshot_rele(se);
