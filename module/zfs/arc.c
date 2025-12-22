@@ -833,12 +833,6 @@ typedef struct arc_async_flush {
 #define	L2ARC_FEED_SECS		1		/* caching interval secs */
 #define	L2ARC_FEED_MIN_MS	200		/* min caching interval ms */
 
-/*
- * We can feed L2ARC from two states of ARC buffers, mru and mfu,
- * and each of the state has two types: data and metadata.
- */
-#define	L2ARC_FEED_TYPES	4
-
 /* L2ARC Performance Tunables */
 static uint64_t l2arc_write_max = L2ARC_WRITE_SIZE;	/* def max write size */
 static uint64_t l2arc_dwpd_limit = 1;			/* DWPD Per Day */
@@ -8513,19 +8507,7 @@ static uint64_t
 l2arc_write_size(l2arc_dev_t *dev, clock_t *interval)
 {
 	uint64_t size;
-	uint64_t write_rate;
-
-	/*
-	 * Make sure our globals have meaningful values in case the user
-	 * altered them.
-	 */
-	if (l2arc_write_max == 0) {
-		cmn_err(CE_NOTE, "l2arc_write_max must be greater than zero, "
-		    "resetting it to the default (%d)", L2ARC_WRITE_SIZE);
-		l2arc_write_max = L2ARC_WRITE_SIZE;
-	}
-
-	write_rate = l2arc_get_write_rate(dev);
+	uint64_t write_rate = l2arc_get_write_rate(dev);
 
 	if (write_rate > L2ARC_BURST_SIZE_MAX) {
 		/* Calculate interval to achieve desired rate with burst cap */
@@ -9072,15 +9054,6 @@ l2arc_pool_has_devices(spa_t *target_spa)
 static void
 l2arc_pool_markers_init(spa_t *spa)
 {
-	ASSERT(spa->spa_l2arc_info.l2arc_markers == NULL);
-
-	spa->spa_l2arc_info.l2arc_markers = kmem_zalloc(L2ARC_FEED_TYPES *
-	    sizeof (arc_buf_hdr_t **), KM_SLEEP);
-
-	/* Initialize sublist busy flags for multi-threaded coordination */
-	ASSERT(spa->spa_l2arc_info.l2arc_sublist_busy == NULL);
-	spa->spa_l2arc_info.l2arc_sublist_busy = kmem_zalloc(L2ARC_FEED_TYPES *
-	    sizeof (boolean_t *), KM_SLEEP);
 	mutex_init(&spa->spa_l2arc_info.l2arc_sublist_lock, NULL,
 	    MUTEX_DEFAULT, NULL);
 
@@ -9112,8 +9085,6 @@ l2arc_pool_markers_init(spa_t *spa)
 static void
 l2arc_pool_markers_fini(spa_t *spa)
 {
-	ASSERT(spa->spa_l2arc_info.l2arc_markers != NULL);
-
 	for (int pass = 0; pass < L2ARC_FEED_TYPES; pass++) {
 		if (spa->spa_l2arc_info.l2arc_markers[pass] == NULL)
 			continue;
@@ -9149,14 +9120,6 @@ l2arc_pool_markers_fini(spa_t *spa)
 		spa->spa_l2arc_info.l2arc_sublist_busy[pass] = NULL;
 	}
 
-	kmem_free(spa->spa_l2arc_info.l2arc_markers, L2ARC_FEED_TYPES *
-	    sizeof (arc_buf_hdr_t **));
-	spa->spa_l2arc_info.l2arc_markers = NULL;
-
-	/* Free sublist busy flags array and destroy mutex */
-	kmem_free(spa->spa_l2arc_info.l2arc_sublist_busy, L2ARC_FEED_TYPES *
-	    sizeof (boolean_t *));
-	spa->spa_l2arc_info.l2arc_sublist_busy = NULL;
 	mutex_destroy(&spa->spa_l2arc_info.l2arc_sublist_lock);
 }
 
@@ -9193,11 +9156,10 @@ l2arc_dwpd_rate_limit(l2arc_dev_t *dev)
 {
 	uint64_t device_size = dev->l2ad_end - dev->l2ad_start;
 	uint64_t daily_budget = device_size * l2arc_dwpd_limit;
-	hrtime_t now = gethrtime();
+	uint64_t now = gethrestime_sec();
 
 	/* Reset every 24 hours */
-	if ((now - dev->l2ad_dwpd_start) >=
-	    (hrtime_t)24 * 3600 * NANOSEC) {
+	if ((now - dev->l2ad_dwpd_start) >= 24 * 3600) {
 		/* Save unused budget from previous period (max 1 day) */
 		dev->l2ad_dwpd_accumulated = MIN(daily_budget,
 		    daily_budget - dev->l2ad_dwpd_writes);
@@ -9205,7 +9167,7 @@ l2arc_dwpd_rate_limit(l2arc_dev_t *dev)
 		dev->l2ad_dwpd_start = now;
 	}
 
-	uint64_t elapsed = (now - dev->l2ad_dwpd_start) / NANOSEC;
+	uint64_t elapsed = now - dev->l2ad_dwpd_start;
 	uint64_t dwpd_budget = daily_budget / (24 * 3600);
 	uint64_t expected_writes = elapsed * dwpd_budget;
 
@@ -9224,10 +9186,21 @@ l2arc_dwpd_rate_limit(l2arc_dev_t *dev)
 static uint64_t
 l2arc_get_write_rate(l2arc_dev_t *dev)
 {
+	/*
+	 * Make sure l2arc_write_max is valid in case user altered it.
+	 */
+	if (l2arc_write_max == 0) {
+		cmn_err(CE_NOTE, "l2arc_write_max must be greater than zero, "
+		    "resetting it to the default (%d)", L2ARC_WRITE_SIZE);
+		l2arc_write_max = L2ARC_WRITE_SIZE;
+	}
+
 	/* Apply DWPD rate limit after device filled once */
 	if (!dev->l2ad_first && l2arc_dwpd_limit > 0 &&
-	    dev->l2ad_vdev->vdev_ops != &vdev_file_ops)
-		return (MIN(l2arc_dwpd_rate_limit(dev), l2arc_write_max));
+	    dev->l2ad_vdev->vdev_ops != &vdev_file_ops) {
+		uint64_t dwpd_rate = l2arc_dwpd_rate_limit(dev);
+		return (MIN(dwpd_rate, l2arc_write_max));
+	}
 
 	return (l2arc_write_max);
 }
@@ -10037,10 +10010,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	spa->spa_l2arc_info.l2arc_total_writes += write_asize;
 	mutex_exit(&spa->spa_l2arc_info.l2arc_sublist_lock);
 
-	/* Track writes for DWPD when device is recycling (not file vdevs) */
-	if (!dev->l2ad_first && l2arc_dwpd_limit > 0 &&
-	    dev->l2ad_vdev->vdev_ops != &vdev_file_ops)
-		dev->l2ad_dwpd_writes += write_asize;
+	/* Track writes for DWPD rate limiting */
+	dev->l2ad_dwpd_writes += write_asize;
 
 	/*
 	 * Update the device header after the zio completes as
@@ -10110,14 +10081,8 @@ l2arc_feed_thread(void *arg)
 		 */
 		spa = dev->l2ad_spa;
 		ASSERT3P(spa, !=, NULL);
-		if (!spa_config_tryenter(spa, SCL_L2ARC, dev, RW_READER)) {
-			/*
-			 * Couldn't get config lock - skip this iteration.
-			 * If a removal is in progress, the thread will see
-			 * l2ad_thread_exit on the next iteration.
-			 */
+		if (!spa_config_tryenter(spa, SCL_L2ARC, dev, RW_READER))
 			continue;
-		}
 
 		/*
 		 * If the pool is read-only then force the feed thread to
@@ -10347,7 +10312,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 	adddev->l2ad_writing = B_FALSE;
 	adddev->l2ad_trim_all = B_FALSE;
 	adddev->l2ad_dwpd_writes = 0;
-	adddev->l2ad_dwpd_start = gethrtime();
+	adddev->l2ad_dwpd_start = gethrestime_sec();
 	adddev->l2ad_dwpd_accumulated = 0;
 	list_link_init(&adddev->l2ad_node);
 	adddev->l2ad_dev_hdr = kmem_zalloc(l2dhdr_asize, KM_SLEEP);
@@ -10413,7 +10378,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 	 * The thread name includes the spa name and device number
 	 * for easy identification.
 	 */
-	if (spa_mode_global & SPA_MODE_WRITE) {
+	if (spa_writeable(spa)) {
 		char thread_name[MAXNAMELEN];
 		snprintf(thread_name, sizeof (thread_name), "l2arc_%s_%llu",
 		    spa_name(spa), (u_longlong_t)vd->vdev_id);
