@@ -38,8 +38,21 @@ jobs:
             ci_type=$(python3 .github/workflows/scripts/generate-ci-type.py $head $base)
           fi
 
-          # Minimal FreeBSD-only for l2arc_dwpd_multidev_pos testing
-          os_selection='["freebsd14-3r", "freebsd15-0s", "freebsd16-0c"]'
+          case "$ci_type" in
+          quick)
+            os_selection='["almalinux8", "almalinux9", "almalinux10", "debian12", "fedora42", "freebsd15-0s", "ubuntu24"]'
+            ;;
+          linux)
+            os_selection='["almalinux8", "almalinux9", "almalinux10", "centos-stream9", "centos-stream10", "debian11", "debian12", "debian13", "fedora41", "fedora42", "fedora43", "ubuntu22", "ubuntu24"]'
+            ;;
+          freebsd)
+            os_selection='["freebsd13-5r", "freebsd14-3r", "freebsd13-5s", "freebsd14-3s", "freebsd15-0s", "freebsd16-0c"]'
+            ;;
+          *)
+            # default list
+            os_selection='["almalinux8", "almalinux9", "almalinux10", "centos-stream9", "centos-stream10", "debian12", "debian13", "fedora42", "fedora43", "freebsd14-3r", "freebsd15-0s", "freebsd16-0c", "ubuntu22", "ubuntu24"]'
+            ;;
+          esac
 
           if ${{ github.event.inputs.fedora_kernel_ver != '' }}; then
               # They specified a custom kernel version for Fedora.
@@ -137,6 +150,38 @@ jobs:
       run: .github/workflows/scripts/qemu-9-summary-page.sh 2
     - name: Generating summary...
       run: .github/workflows/scripts/qemu-9-summary-page.sh 3
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 4
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 5
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 6
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 7
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 8
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 9
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 10
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 11
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 12
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 13
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 14
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 15
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 16
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 17
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 18
+    - name: Generating summary...
+      run: .github/workflows/scripts/qemu-9-summary-page.sh 19
     - uses: actions/upload-artifact@v4
       with:
         name: Summary Files
