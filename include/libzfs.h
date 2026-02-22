@@ -957,11 +957,27 @@ _LIBZFS_H boolean_t zfs_bookmark_exists(const char *path);
 
 /*
  * Mount support functions.
+ *
+ * Namespace property flags for selective remount via mount_setattr(2).
+ * Stored in the upper 32 bits of flags to avoid collision with MS_* flags.
  */
+#define	ZFS_MNT_PROP_ATIME	((uint64_t)1 << 32)
+#define	ZFS_MNT_PROP_RELATIME	((uint64_t)1 << 33)
+#define	ZFS_MNT_PROP_DEVICES	((uint64_t)1 << 34)
+#define	ZFS_MNT_PROP_EXEC	((uint64_t)1 << 35)
+#define	ZFS_MNT_PROP_SETUID	((uint64_t)1 << 36)
+#define	ZFS_MNT_PROP_READONLY	((uint64_t)1 << 37)
+#define	ZFS_MNT_PROP_XATTR	((uint64_t)1 << 38)
+#define	ZFS_MNT_PROP_NBMAND	((uint64_t)1 << 39)
+#define	ZFS_MNT_PROP_MASK	((uint64_t)0xFF << 32)
+
+_LIBZFS_H uint64_t zfs_namespace_prop_flag(zfs_prop_t);
+_LIBZFS_H boolean_t zfs_is_namespace_prop(zfs_prop_t);
 _LIBZFS_H boolean_t is_mounted(libzfs_handle_t *, const char *special, char **);
 _LIBZFS_H boolean_t zfs_is_mounted(zfs_handle_t *, char **);
-_LIBZFS_H int zfs_mount(zfs_handle_t *, const char *, int);
-_LIBZFS_H int zfs_mount_at(zfs_handle_t *, const char *, int, const char *);
+_LIBZFS_H int zfs_mount(zfs_handle_t *, const char *, uint64_t);
+_LIBZFS_H int zfs_mount_at(zfs_handle_t *, const char *, uint64_t,
+    const char *);
 _LIBZFS_H int zfs_unmount(zfs_handle_t *, const char *, int);
 _LIBZFS_H int zfs_unmountall(zfs_handle_t *, int);
 _LIBZFS_H int zfs_mount_delegation_check(void);

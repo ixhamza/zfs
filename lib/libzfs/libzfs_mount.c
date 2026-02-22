@@ -103,6 +103,47 @@ zfs_share_protocol_name(enum sa_protocol protocol)
 	return (sa_protocol_names[protocol]);
 }
 
+/*
+ * Returns B_TRUE if the property is a namespace property that requires
+ * a remount to take effect.
+ */
+boolean_t
+zfs_is_namespace_prop(zfs_prop_t prop)
+{
+	switch (prop) {
+	case ZFS_PROP_ATIME:
+	case ZFS_PROP_RELATIME:
+	case ZFS_PROP_DEVICES:
+	case ZFS_PROP_EXEC:
+	case ZFS_PROP_SETUID:
+	case ZFS_PROP_READONLY:
+	case ZFS_PROP_XATTR:
+	case ZFS_PROP_NBMAND:
+		return (B_TRUE);
+	default:
+		return (B_FALSE);
+	}
+}
+
+/*
+ * Returns the ZFS_MNT_PROP_* flag for a namespace property.
+ */
+uint64_t
+zfs_namespace_prop_flag(zfs_prop_t prop)
+{
+	switch (prop) {
+	case ZFS_PROP_ATIME:	return (ZFS_MNT_PROP_ATIME);
+	case ZFS_PROP_RELATIME:	return (ZFS_MNT_PROP_RELATIME);
+	case ZFS_PROP_DEVICES:	return (ZFS_MNT_PROP_DEVICES);
+	case ZFS_PROP_EXEC:	return (ZFS_MNT_PROP_EXEC);
+	case ZFS_PROP_SETUID:	return (ZFS_MNT_PROP_SETUID);
+	case ZFS_PROP_READONLY:	return (ZFS_MNT_PROP_READONLY);
+	case ZFS_PROP_XATTR:	return (ZFS_MNT_PROP_XATTR);
+	case ZFS_PROP_NBMAND:	return (ZFS_MNT_PROP_NBMAND);
+	default:		return (0);
+	}
+}
+
 static boolean_t
 dir_is_empty_stat(const char *dirname)
 {
@@ -341,8 +382,58 @@ zfs_add_options(zfs_handle_t *zhp, char *options, int len)
 	return (error);
 }
 
+#ifdef HAVE_MOUNT_SETATTR
+/*
+ * Build a struct mount_attr for the changed namespace properties.
+ * Parallel to zfs_add_options() but produces mount_setattr(2) input
+ * instead of a mount options string.
+ */
+static void
+zfs_add_options_setattr(zfs_handle_t *zhp, struct mount_attr *attr,
+    uint64_t nspflags)
+{
+	if (nspflags & ZFS_MNT_PROP_READONLY) {
+		if (getprop_uint64(zhp, ZFS_PROP_READONLY, NULL))
+			attr->attr_set |= MOUNT_ATTR_RDONLY;
+		else
+			attr->attr_clr |= MOUNT_ATTR_RDONLY;
+	}
+	if (nspflags & ZFS_MNT_PROP_EXEC) {
+		if (getprop_uint64(zhp, ZFS_PROP_EXEC, NULL))
+			attr->attr_clr |= MOUNT_ATTR_NOEXEC;
+		else
+			attr->attr_set |= MOUNT_ATTR_NOEXEC;
+	}
+	if (nspflags & ZFS_MNT_PROP_SETUID) {
+		if (getprop_uint64(zhp, ZFS_PROP_SETUID, NULL))
+			attr->attr_clr |= MOUNT_ATTR_NOSUID;
+		else
+			attr->attr_set |= MOUNT_ATTR_NOSUID;
+	}
+	if (nspflags & ZFS_MNT_PROP_DEVICES) {
+		if (getprop_uint64(zhp, ZFS_PROP_DEVICES, NULL))
+			attr->attr_clr |= MOUNT_ATTR_NODEV;
+		else
+			attr->attr_set |= MOUNT_ATTR_NODEV;
+	}
+	if (nspflags & (ZFS_MNT_PROP_ATIME | ZFS_MNT_PROP_RELATIME)) {
+		uint64_t atime = getprop_uint64(zhp, ZFS_PROP_ATIME, NULL);
+		uint64_t relatime = getprop_uint64(zhp,
+		    ZFS_PROP_RELATIME, NULL);
+
+		attr->attr_clr |= MOUNT_ATTR__ATIME;
+		if (!atime)
+			attr->attr_set |= MOUNT_ATTR_NOATIME;
+		else if (relatime)
+			attr->attr_set |= MOUNT_ATTR_RELATIME;
+		else
+			attr->attr_set |= MOUNT_ATTR_STRICTATIME;
+	}
+}
+#endif /* HAVE_MOUNT_SETATTR */
+
 int
-zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
+zfs_mount(zfs_handle_t *zhp, const char *options, uint64_t flags)
 {
 	char mountpoint[ZFS_MAXPROPLEN];
 
@@ -357,7 +448,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
  * Mount the given filesystem.
  */
 int
-zfs_mount_at(zfs_handle_t *zhp, const char *options, int flags,
+zfs_mount_at(zfs_handle_t *zhp, const char *options, uint64_t flags,
     const char *mountpoint)
 {
 	struct stat buf;
@@ -368,6 +459,10 @@ zfs_mount_at(zfs_handle_t *zhp, const char *options, int flags,
 	zfs_handle_t *encroot_hp = zhp;
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
 	uint64_t keystatus;
+	uint64_t selective = 0;
+#ifdef HAVE_MOUNT_SETATTR
+	struct mount_attr mnt_attr = { 0 };
+#endif
 	int remount = 0, rc;
 
 	if (options == NULL) {
@@ -378,6 +473,12 @@ zfs_mount_at(zfs_handle_t *zhp, const char *options, int flags,
 
 	if (strstr(mntopts, MNTOPT_REMOUNT) != NULL)
 		remount = 1;
+
+#ifdef HAVE_MOUNT_SETATTR
+	if (remount && (flags & ZFS_MNT_PROP_MASK))
+		selective = flags & ZFS_MNT_PROP_MASK;
+#endif
+	flags &= ~ZFS_MNT_PROP_MASK;
 
 	/* Potentially duplicates some checks if invoked by zfs_mount(). */
 	if (!zfs_is_mountable_internal(zhp))
@@ -396,7 +497,12 @@ zfs_mount_at(zfs_handle_t *zhp, const char *options, int flags,
 	 * given a super block there is no back reference to update the per
 	 * mount point options.
 	 */
-	rc = zfs_add_options(zhp, mntopts, sizeof (mntopts));
+#ifdef HAVE_MOUNT_SETATTR
+	if (selective)
+		zfs_add_options_setattr(zhp, &mnt_attr, selective);
+	else
+#endif
+		rc = zfs_add_options(zhp, mntopts, sizeof (mntopts));
 	if (rc) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "default options unavailable"));
@@ -502,7 +608,15 @@ zfs_mount_at(zfs_handle_t *zhp, const char *options, int flags,
 	}
 
 	/* perform the mount */
-	rc = do_mount(zhp, mountpoint, mntopts, flags);
+#ifdef HAVE_MOUNT_SETATTR
+	if (selective) {
+		rc = mount_setattr(AT_FDCWD, mountpoint, 0,
+		    &mnt_attr, sizeof (mnt_attr));
+		if (rc != 0)
+			rc = errno;
+	} else
+#endif
+		rc = do_mount(zhp, mountpoint, mntopts, (int)flags);
 	if (rc) {
 		/*
 		 * Generic errors are nasty, but there are just way too many
