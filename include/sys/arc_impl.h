@@ -52,14 +52,6 @@ extern "C" {
 #define	L2ARC_MRU_DATA		3
 
 /*
- * Extended headroom state for a single L2ARC pass.
- * Tracks cumulative bytes written to control marker advancement.
- */
-typedef struct l2arc_ext_headroom {
-	uint64_t	ext_written;	/* bytes written since marker reset */
-} l2arc_ext_headroom_t;
-
-/*
  * L2ARC state and statistics for persistent marker management.
  */
 typedef struct l2arc_info {
@@ -73,13 +65,13 @@ typedef struct l2arc_info {
 	 */
 	boolean_t	*l2arc_sublist_busy[L2ARC_FEED_TYPES];
 	boolean_t	*l2arc_sublist_reset[L2ARC_FEED_TYPES];
-	kmutex_t	l2arc_sublist_lock;	/* protects busy flags */
+	kmutex_t	l2arc_sublist_lock;	/* protects busy/reset flags */
 	/*
-	 * Extended headroom for all passes.  Limits how far persistent
-	 * markers advance from tail before resetting, based on % of
-	 * state size.
+	 * Cumulative bytes scanned per pass since marker reset.
+	 * Limits how far persistent markers advance from tail
+	 * before resetting, based on % of state size.
 	 */
-	l2arc_ext_headroom_t	l2arc_ext[L2ARC_FEED_TYPES];
+	uint64_t	l2arc_ext_scanned[L2ARC_FEED_TYPES];
 } l2arc_info_t;
 
 /*
@@ -481,7 +473,7 @@ typedef struct l2arc_dev {
 	 * while data passes got nothing written. Used to detect
 	 * monopolization and skip metadata to give data a chance.
 	 */
-	uint64_t		l2ad_meta_writes;
+	uint64_t		l2ad_meta_cycles;
 } l2arc_dev_t;
 
 /*

@@ -957,21 +957,20 @@ int l2arc_exclude_special = 0;
 static int l2arc_mfuonly = 0;
 
 /*
- * Write-based depth cap as percentage of state size.  Each pass resets
- * its markers to tail after writing this fraction of the state's content.
- * Naturally adaptive: the marker stays shallow when there is lots of
- * unbacked content near the tail and deepens when content is mostly backed.
+ * Depth cap as percentage of state size.  Each pass resets its markers
+ * to tail after scanning this fraction of the state.  Keeps markers
+ * focused on the tail zone where L2ARC adds the most value.
  */
-static uint64_t l2arc_ext_headroom_pct = 10;
+static uint64_t l2arc_ext_headroom_pct = 25;
 
 /*
- * Write fairness threshold. When metadata monopolizes the write budget
- * for this many consecutive passes while data gets nothing, skip metadata
- * passes to let data run for one full cycle, then reset the counter.
+ * Metadata monopolization limit.  When metadata fills the write budget
+ * for this many consecutive cycles while data gets nothing, skip metadata
+ * for one cycle to let data run, then reset the counter.
  * With N=2, the steady-state pattern under sustained monopolization is
  * 2 metadata cycles followed by 1 data cycle (67%/33% split).
  */
-static uint64_t l2arc_write_fairness = 2;
+static uint64_t l2arc_meta_cycles = 2;
 
 /*
  * L2ARC TRIM
@@ -9101,7 +9100,7 @@ l2arc_pool_markers_init(spa_t *spa)
 			multilist_sublist_unlock(mls);
 		}
 
-		spa->spa_l2arc_info.l2arc_ext[pass].ext_written = 0;
+		spa->spa_l2arc_info.l2arc_ext_scanned[pass] = 0;
 	}
 }
 
@@ -9926,14 +9925,19 @@ l2arc_get_state_size(int pass)
 static void
 l2arc_flag_pass_reset(spa_t *spa, int pass)
 {
+	ASSERT(MUTEX_HELD(&spa->spa_l2arc_info.l2arc_sublist_lock));
+
 	if (spa->spa_l2arc_info.l2arc_markers[pass] == NULL)
 		return;
 
 	multilist_t *ml = l2arc_get_list(pass);
 	int num_sublists = multilist_get_num_sublists(ml);
 
-	for (int i = 0; i < num_sublists; i++)
+	for (int i = 0; i < num_sublists; i++) {
+		multilist_sublist_t *mls = multilist_sublist_lock_idx(ml, i);
 		spa->spa_l2arc_info.l2arc_sublist_reset[pass][i] = B_TRUE;
+		multilist_sublist_unlock(mls);
+	}
 }
 
 /*
@@ -10002,7 +10006,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 		l2arc_reset_all_markers(spa);
 		/* Reset extended headroom for all passes */
 		for (int p = 0; p < L2ARC_FEED_TYPES; p++)
-			spa->spa_l2arc_info.l2arc_ext[p].ext_written = 0;
+			spa->spa_l2arc_info.l2arc_ext_scanned[p] = 0;
 	}
 	mutex_exit(&spa->spa_l2arc_info.l2arc_sublist_lock);
 
@@ -10010,10 +10014,10 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	 * Copy buffers for L2ARC writing.
 	 */
 	boolean_t skip_meta = (save_position &&
-	    l2arc_write_fairness > 0 &&
-	    dev->l2ad_meta_writes >= l2arc_write_fairness);
+	    l2arc_meta_cycles > 0 &&
+	    dev->l2ad_meta_cycles >= l2arc_meta_cycles);
 	if (skip_meta)
-		dev->l2ad_meta_writes = 0;
+		dev->l2ad_meta_cycles = 0;
 
 	for (int pass = 0; pass < L2ARC_FEED_TYPES; pass++) {
 		/*
@@ -10030,6 +10034,9 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 				continue;
 		}
 
+		if (skip_meta && pass <= L2ARC_MRU_META)
+			continue;
+
 		headroom = target_sz * l2arc_headroom;
 		if (zfs_compressed_arc_enabled)
 			headroom = (headroom * l2arc_headroom_boost) / 100;
@@ -10039,12 +10046,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 		int num_sublists = multilist_get_num_sublists(ml);
 		uint64_t consumed_headroom = 0;
 
-		if (skip_meta && pass <= L2ARC_MRU_META)
-			continue;
-
 		int current_sublist = multilist_get_random_index(ml);
 		int processed_sublists = 0;
-		uint64_t pass_start_asize = write_asize;
 		while (processed_sublists < num_sublists && !full) {
 			uint64_t sublist_headroom;
 
@@ -10098,37 +10101,35 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 		}
 
 		/*
-		 * Count monopolized metadata passes toward fairness
-		 * threshold.  Only count when metadata actually filled
-		 * the write budget, starving data passes.
+		 * Count consecutive metadata monopolization toward
+		 * l2arc_meta_cycles.  Only count when metadata actually
+		 * filled the write budget, starving data passes.
 		 */
 		if (save_position && pass <= L2ARC_MRU_META && full)
-			dev->l2ad_meta_writes++;
+			dev->l2ad_meta_cycles++;
 
 		/*
-		 * Write-based depth cap: track cumulative bytes written
-		 * per pass and reset markers when the write cap is
-		 * reached.  Naturally adaptive — the marker stays near
-		 * the tail when there is lots of unbacked content
-		 * (writes accumulate fast) and deepens when content is
-		 * mostly backed (writes accumulate slowly).
+		 * Depth cap: track cumulative bytes scanned per pass
+		 * and reset markers when the scan cap is reached.
+		 * Keeps the marker near the tail where L2ARC adds
+		 * the most value.
 		 */
 		if (save_position) {
-			l2arc_ext_headroom_t *ext =
-			    &spa->spa_l2arc_info.l2arc_ext[pass];
-
 			mutex_enter(&spa->spa_l2arc_info.l2arc_sublist_lock);
 
-			ext->ext_written += write_asize - pass_start_asize;
+			spa->spa_l2arc_info.l2arc_ext_scanned[pass] +=
+			    consumed_headroom;
 
 			uint64_t state_sz = l2arc_get_state_size(pass);
-			uint64_t write_cap =
+			uint64_t scan_cap =
 			    state_sz * l2arc_ext_headroom_pct / 100;
 
-			if (write_cap > 0 &&
-			    ext->ext_written >= write_cap) {
+			if (scan_cap > 0 &&
+			    spa->spa_l2arc_info.l2arc_ext_scanned[pass] >=
+			    scan_cap) {
 				l2arc_flag_pass_reset(spa, pass);
-				ext->ext_written = 0;
+				spa->spa_l2arc_info.l2arc_ext_scanned[pass] =
+				    0;
 			}
 
 			mutex_exit(&spa->spa_l2arc_info.l2arc_sublist_lock);
@@ -10139,11 +10140,11 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	}
 
 	/*
-	 * If nothing was written at all, reset fairness counter.
+	 * If nothing was written at all, reset monopolization counter.
 	 * No point skipping metadata if data has nothing either.
 	 */
 	if (write_asize == 0)
-		dev->l2ad_meta_writes = 0;
+		dev->l2ad_meta_cycles = 0;
 
 	/* No buffers selected for writing? */
 	if (pio == NULL) {
@@ -11788,11 +11789,11 @@ ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, mfuonly, INT, ZMOD_RW,
 ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, exclude_special, INT, ZMOD_RW,
 	"Exclude dbufs on special vdevs from being cached to L2ARC if set.");
 
-ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, write_fairness, U64, ZMOD_RW,
-	"Metadata passes before skipping to give data a turn");
+ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, meta_cycles, U64, ZMOD_RW,
+	"Consecutive metadata cycles before skipping to let data run");
 
 ZFS_MODULE_PARAM(zfs_l2arc, l2arc_, ext_headroom_pct, U64, ZMOD_RW,
-	"Write-based depth cap as percentage of state size");
+	"Depth cap as percentage of state size for marker reset");
 
 ZFS_MODULE_PARAM_CALL(zfs_arc, zfs_arc_, lotsfree_percent, param_set_arc_int,
 	param_get_uint, ZMOD_RW, "System free memory I/O throttle in bytes");
