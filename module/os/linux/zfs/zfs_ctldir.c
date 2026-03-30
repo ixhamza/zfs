@@ -1152,10 +1152,17 @@ zfsctl_snapshot_unmount(const char *snapname, int flags)
 		cv_wait(&se->se_cv, &se->se_mtx);
 	mutex_exit(&se->se_mtx);
 
-	exportfs_flush();
-
-	if (flags & MNT_FORCE)
+	/*
+	 * Only flush the NFS export cache for forced unmounts (e.g.
+	 * zfs destroy). For auto-expire unmounts, skip the flush so
+	 * that export cache references keep the mount busy, preventing
+	 * unmount while NFS clients hold active file handles. The
+	 * caller (snapentry_expire) will reschedule the unmount attempt.
+	 */
+	if (flags & MNT_FORCE) {
+		exportfs_flush();
 		argv[4] = "-fn";
+	}
 	argv[5] = se->se_path;
 	dprintf("unmount; path=%s\n", se->se_path);
 	error = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC);
