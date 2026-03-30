@@ -447,7 +447,7 @@ zpl_snapdir_getattr_impl(const struct path *path, struct kstat *stat,
     u32 request_mask, unsigned int query_flags)
 #endif
 {
-	(void) request_mask, (void) query_flags;
+	(void) query_flags;
 	struct inode *ip = path->dentry->d_inode;
 	zfsvfs_t *zfsvfs = ITOZSB(ip);
 	int error;
@@ -485,6 +485,22 @@ zpl_snapdir_getattr_impl(const struct path *path, struct kstat *stat,
 
 	stat->ctime = stat->mtime = dmu_objset_snap_cmtime(zfsvfs->z_os);
 	stat->atime = current_time(ip);
+
+#ifdef STATX_CHANGE_COOKIE
+	if (request_mask & STATX_CHANGE_COOKIE) {
+		/*
+		 * Use snap_cmtime in upper bits and nlink (which encodes
+		 * 2 + snap_count) in lower bits. This ensures the change
+		 * cookie updates when snapshots are created or destroyed,
+		 * even when the coarse timer doesn't advance.
+		 */
+		stat->change_cookie =
+		    ((u64)stat->ctime.tv_sec << 32) | (uint32_t)stat->nlink;
+		stat->attributes |= STATX_ATTR_CHANGE_MONOTONIC;
+		stat->result_mask |= STATX_CHANGE_COOKIE;
+	}
+#endif
+
 	zpl_exit(zfsvfs, FTAG);
 
 	return (0);
