@@ -649,7 +649,7 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 
 	sa_bulk_attr_t bulk[5];
 	int count = 0;
-	uint64_t mtime[2], ctime[2], change_seq;
+	uint64_t mtime[2], ctime[2];
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL, &mtime, 16);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL, &ctime, 16);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_SIZE(zfsvfs), NULL,
@@ -658,7 +658,7 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 	    &zp->z_pflags, 8);
 	if (zp->z_is_sa)
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_SEQ(zfsvfs), NULL,
-		    &change_seq, sizeof (change_seq));
+		    &zp->z_seq, sizeof (zp->z_seq));
 
 	/*
 	 * Callers might not be able to detect properly that we are read-only,
@@ -873,8 +873,7 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 		 * Start a transaction.
 		 */
 		dmu_tx_t *tx = dmu_tx_create(zfsvfs->z_os);
-		dmu_tx_hold_sa(tx, zp->z_sa_hdl,
-		    (zp->z_pflags & ZFS_HAS_SEQ) ? B_FALSE : B_TRUE);
+		dmu_tx_hold_sa(tx, zp->z_sa_hdl, ZFS_SEQ_MAY_GROW(zp));
 		dmu_buf_impl_t *db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
 		DB_DNODE_ENTER(db);
 		dmu_tx_hold_write_by_dnode(tx, DB_DNODE(db), woff, nbytes);
@@ -1014,10 +1013,8 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 		    &clear_setid_bits_txg, tx);
 
 		zfs_tstamp_update_setup(zp, CONTENT_MODIFIED, mtime, ctime);
-		if (zp->z_is_sa) {
-			change_seq = zp->z_seq;
+		if (zp->z_is_sa)
 			zp->z_pflags |= ZFS_HAS_SEQ;
-		}
 
 		/*
 		 * Update the file size (zp_size) if it has changed;
@@ -1625,7 +1622,7 @@ zfs_clone_range(znode_t *inzp, uint64_t *inoffp, znode_t *outzp,
 	int		error;
 	int		count = 0;
 	sa_bulk_attr_t	bulk[5];
-	uint64_t	mtime[2], ctime[2], change_seq;
+	uint64_t	mtime[2], ctime[2];
 	uint64_t	uid, gid, projid;
 	blkptr_t	*bps;
 	size_t		maxblocks, nbps;
@@ -1882,7 +1879,7 @@ zfs_clone_range(znode_t *inzp, uint64_t *inoffp, znode_t *outzp,
 	    &outzp->z_pflags, 8);
 	if (outzp->z_is_sa)
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_SEQ(outzfsvfs), NULL,
-		    &change_seq, sizeof (change_seq));
+		    &outzp->z_seq, sizeof (outzp->z_seq));
 
 	zilog = outzfsvfs->z_log;
 	maxblocks = zil_max_log_data(zilog, sizeof (lr_clone_range_t)) /
@@ -1946,8 +1943,7 @@ zfs_clone_range(znode_t *inzp, uint64_t *inoffp, znode_t *outzp,
 		 * Start a transaction.
 		 */
 		tx = dmu_tx_create(outos);
-		dmu_tx_hold_sa(tx, outzp->z_sa_hdl,
-		    (outzp->z_pflags & ZFS_HAS_SEQ) ? B_FALSE : B_TRUE);
+		dmu_tx_hold_sa(tx, outzp->z_sa_hdl, ZFS_SEQ_MAY_GROW(outzp));
 		db = (dmu_buf_impl_t *)sa_get_db(outzp->z_sa_hdl);
 		DB_DNODE_ENTER(db);
 		dmu_tx_hold_clone_by_dnode(tx, DB_DNODE(db), outoff, size,
@@ -2002,10 +1998,8 @@ zfs_clone_range(znode_t *inzp, uint64_t *inoffp, znode_t *outzp,
 		    &clear_setid_bits_txg, tx);
 
 		zfs_tstamp_update_setup(outzp, CONTENT_MODIFIED, mtime, ctime);
-		if (outzp->z_is_sa) {
-			change_seq = outzp->z_seq;
+		if (outzp->z_is_sa)
 			outzp->z_pflags |= ZFS_HAS_SEQ;
-		}
 
 		/*
 		 * Update the file size (zp_size) if it has changed;
@@ -2087,7 +2081,7 @@ zfs_clone_range_replay(znode_t *zp, uint64_t off, uint64_t len, uint64_t blksz,
 	int		error;
 	int		count = 0;
 	sa_bulk_attr_t	bulk[5];
-	uint64_t	mtime[2], ctime[2], change_seq;
+	uint64_t	mtime[2], ctime[2];
 
 	ASSERT3U(off, <, MAXOFFSET_T);
 	ASSERT3U(len, >, 0);
@@ -2121,8 +2115,7 @@ zfs_clone_range_replay(znode_t *zp, uint64_t off, uint64_t len, uint64_t blksz,
 	 */
 	tx = dmu_tx_create(zfsvfs->z_os);
 
-	dmu_tx_hold_sa(tx, zp->z_sa_hdl,
-	    (zp->z_pflags & ZFS_HAS_SEQ) ? B_FALSE : B_TRUE);
+	dmu_tx_hold_sa(tx, zp->z_sa_hdl, ZFS_SEQ_MAY_GROW(zp));
 	db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
 	DB_DNODE_ENTER(db);
 	dmu_tx_hold_clone_by_dnode(tx, DB_DNODE(db), off, len, blksz);
@@ -2141,7 +2134,7 @@ zfs_clone_range_replay(znode_t *zp, uint64_t off, uint64_t len, uint64_t blksz,
 	dmu_brt_clone(zfsvfs->z_os, zp->z_id, off, len, tx, bps, nbps);
 
 	zfs_tstamp_update_setup(zp, CONTENT_MODIFIED, mtime, ctime);
-	ZFS_PERSIST_SEQ(zp, bulk, count, &change_seq);
+	ZFS_PERSIST_SEQ(zp, bulk, count);
 
 	if (zp->z_size < off + len)
 		zp->z_size = off + len;

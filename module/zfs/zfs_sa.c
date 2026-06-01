@@ -272,7 +272,7 @@ zfs_sa_set_xattr(znode_t *zp, const char *name, const void *value, size_t vsize)
 	} else {
 		int count = 0;
 		sa_bulk_attr_t bulk[4];
-		uint64_t ctime[2], change_seq;
+		uint64_t ctime[2];
 
 		if (logsaxattr)
 			zfs_log_setsaxattr(zilog, tx, TX_SETSAXATTR, zp, name,
@@ -285,7 +285,7 @@ zfs_sa_set_xattr(znode_t *zp, const char *name, const void *value, size_t vsize)
 		    NULL, &ctime, 16);
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs),
 		    NULL, &zp->z_pflags, 8);
-		ZFS_PERSIST_SEQ(zp, bulk, count, &change_seq);
+		ZFS_PERSIST_SEQ(zp, bulk, count);
 		VERIFY0(sa_bulk_update(zp->z_sa_hdl, bulk, count, tx));
 
 		dmu_tx_commit(tx);

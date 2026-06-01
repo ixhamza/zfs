@@ -116,19 +116,26 @@ extern "C" {
 #define	SA_ZPL_SEQ(z)		z->z_attr_table[ZPL_SEQ]
 
 /*
- * Persist zp->z_seq into the SA bulk and mark the file as carrying
- * SA_ZPL_SEQ in its layout. No-op for legacy (non-SA-native) znodes
- * since SA_ZPL_SEQ cannot be added to their layout. Caller's bulk MUST
- * include SA_ZPL_FLAGS so the ZFS_HAS_SEQ bit reaches disk in the same
- * transaction.
+ * may_grow for a dmu_tx_hold_sa() that may persist z_seq: the SA layout
+ * grows the first time SA_ZPL_SEQ is added, so grow until ZFS_HAS_SEQ is
+ * set. Mirrors ZFS_PROJID first-set growth.
  */
-#define	ZFS_PERSIST_SEQ(zp, bulk, count, seqp) \
+#define	ZFS_SEQ_MAY_GROW(zp)	\
+	(((zp)->z_pflags & ZFS_HAS_SEQ) ? B_FALSE : B_TRUE)
+
+/*
+ * Persist zp->z_seq: set ZFS_HAS_SEQ and add SA_ZPL_SEQ to the caller's
+ * bulk. No-op for legacy (non-SA-native) znodes. Caller's bulk MUST
+ * include SA_ZPL_FLAGS so the bit reaches disk in the same transaction.
+ * Chunked writers add SA_ZPL_SEQ once before their loop and set
+ * ZFS_HAS_SEQ per chunk instead.
+ */
+#define	ZFS_PERSIST_SEQ(zp, bulk, count) \
 { \
 	if ((zp)->z_is_sa) { \
-		*(seqp) = (zp)->z_seq; \
 		(zp)->z_pflags |= ZFS_HAS_SEQ; \
 		SA_ADD_BULK_ATTR((bulk), (count), SA_ZPL_SEQ(ZTOZSB(zp)), \
-		    NULL, (seqp), sizeof (uint64_t)); \
+		    NULL, &(zp)->z_seq, sizeof ((zp)->z_seq)); \
 	} \
 }
 
@@ -214,7 +221,7 @@ typedef struct znode {
 	boolean_t	z_is_ctldir;	/* are we .zfs entry */
 	boolean_t	z_suspended;	/* extra ref from a suspend? */
 	uint_t		z_blksz;	/* block size in bytes */
-	uint_t		z_seq;		/* modification sequence number */
+	uint64_t	z_seq;		/* modification sequence number */
 	uint64_t	z_mapcnt;	/* number of pages mapped to file */
 	uint64_t	z_dnodesize;	/* dnode size */
 	uint64_t	z_size;		/* file size (cached) */
