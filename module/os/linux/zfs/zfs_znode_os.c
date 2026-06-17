@@ -127,6 +127,7 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 	zp->z_acl_cached = NULL;
 	zp->z_xattr_cached = NULL;
 	zp->z_xattr_parent = 0;
+	zp->z_xattr_dir_absent = B_FALSE;
 
 	return (0);
 }
@@ -538,6 +539,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_atime_dirty = B_FALSE;
 	zp->z_is_ctldir = B_FALSE;
 	zp->z_suspended = B_FALSE;
+	zp->z_xattr_dir_absent = B_FALSE;
 	zp->z_sa_hdl = NULL;
 	zp->z_mapcnt = 0;
 	zp->z_id = db->db_object;
@@ -1200,6 +1202,8 @@ zfs_rezget(znode_t *zp)
 		zp->z_xattr_cached = NULL;
 	}
 	rw_exit(&zp->z_xattr_lock);
+
+	zp->z_xattr_dir_absent = B_FALSE;
 
 	ASSERT0P(zp->z_sa_hdl);
 	err = sa_buf_hold(zfsvfs->z_os, obj_num, NULL, &db);
@@ -1904,6 +1908,7 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	rootzp = kmem_cache_alloc(znode_cache, KM_SLEEP);
 	rootzp->z_unlinked = B_FALSE;
 	rootzp->z_atime_dirty = B_FALSE;
+	rootzp->z_xattr_dir_absent = B_FALSE;
 	rootzp->z_is_sa = USE_SA(version, os);
 	rootzp->z_pflags = 0;
 

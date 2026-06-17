@@ -1204,6 +1204,22 @@ zfs_get_xattrdir(znode_t *zp, znode_t **xzpp, cred_t *cr, int flags)
 	zfs_dirlock_t	*dl;
 	vattr_t		va;
 	int		error;
+
+	/*
+	 * Fast path: a file already known to have no xattr directory (and not
+	 * creating one) returns ENOENT here, skipping the dirlock and
+	 * SA_ZPL_XATTR lookup -- the dominant cost when an absent xattr (e.g.
+	 * security.capability) is probed on such a file.
+	 *
+	 * z_xattr_dir_absent is a lockless hint (READ_ONCE/WRITE_ONCE), set
+	 * true only after observing no dir under the exclusive "" ZXATTR
+	 * dirlock and cleared when a dir is found or created.  It can't be true
+	 * while a dir exists: a dir is created only by setxattr under
+	 * z_xattr_lock WRITER, which excludes the READER probe paths.  Any
+	 * non-CREATE caller of this fast path must hold z_xattr_lock.
+	 */
+	if (!(flags & CREATE_XATTR_DIR) && READ_ONCE(zp->z_xattr_dir_absent))
+		return (SET_ERROR(ENOENT));
 top:
 	error = zfs_dirent_lock(&dl, zp, "", &xzp, ZXATTR, NULL, NULL);
 	if (error)
@@ -1211,11 +1227,13 @@ top:
 
 	if (xzp != NULL) {
 		*xzpp = xzp;
+		WRITE_ONCE(zp->z_xattr_dir_absent, B_FALSE);
 		zfs_dirent_unlock(dl);
 		return (0);
 	}
 
 	if (!(flags & CREATE_XATTR_DIR)) {
+		WRITE_ONCE(zp->z_xattr_dir_absent, B_TRUE);
 		zfs_dirent_unlock(dl);
 		return (SET_ERROR(ENOENT));
 	}
@@ -1241,6 +1259,8 @@ top:
 
 	va.va_dentry = NULL;
 	error = zfs_make_xattrdir(zp, &va, xzpp, cr);
+	if (error == 0)
+		WRITE_ONCE(zp->z_xattr_dir_absent, B_FALSE);
 	zfs_dirent_unlock(dl);
 
 	if (error == ERESTART) {

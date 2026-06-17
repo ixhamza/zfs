@@ -50,6 +50,7 @@ extern "C" {
 
 #define	ZNODE_OS_FIELDS			\
 	inode_timespec_t z_btime; /* creation/birth time (cached) */ \
+	boolean_t	z_xattr_dir_absent; /* file has no xattr dir */ \
 	struct inode	z_inode;
 
 /*
