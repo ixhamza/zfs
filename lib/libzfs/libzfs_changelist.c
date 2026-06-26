@@ -136,7 +136,7 @@ changelist_prefix(prop_changelist_t *clp)
 			switch (clp->cl_prop) {
 			case ZFS_PROP_MOUNTPOINT:
 				if (zfs_unmount(cn->cn_handle, NULL,
-				    clp->cl_mflags) != 0) {
+				    clp->cl_mflags & ~MS_CRYPT) != 0) {
 					ret = -1;
 					cn->cn_needpost = B_FALSE;
 				}
@@ -155,6 +155,29 @@ changelist_prefix(prop_changelist_t *clp)
 
 	if (commit_smb_shares)
 		zfs_commit_shares(smb);
+
+	/*
+	 * For "unmount -u" the key unload was deferred (MS_CRYPT stripped above)
+	 * so the subtree is now fully unmounted and each wrapping-key refcount
+	 * is zero.  Unload the key of every node that is its own encryption
+	 * root; doing it inline above would EBUSY while a sibling is still
+	 * mounted.
+	 */
+	if (ret == 0 && (clp->cl_mflags & MS_CRYPT)) {
+		boolean_t encroot;
+		for (cn = avl_first(&clp->cl_tree); cn != NULL && ret == 0;
+		    cn = AVL_NEXT(&clp->cl_tree, cn)) {
+			if (getzoneid() == GLOBAL_ZONEID && cn->cn_zoned)
+				continue;
+			zfs_refresh_properties(cn->cn_handle);
+			if (zfs_crypto_get_encryption_root(cn->cn_handle,
+			    &encroot, NULL) == 0 && encroot &&
+			    zfs_prop_get_int(cn->cn_handle, ZFS_PROP_KEYSTATUS) ==
+			    ZFS_KEYSTATUS_AVAILABLE &&
+			    zfs_crypto_unload_key(cn->cn_handle) != 0)
+				ret = -1;
+		}
+	}
 
 	if (ret == -1)
 		(void) changelist_postfix(clp);
