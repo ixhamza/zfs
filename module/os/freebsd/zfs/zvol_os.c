@@ -1468,7 +1468,7 @@ zvol_os_free(zvol_state_t *zv)
 	cv_destroy(&zv->zv_removing_cv);
 	dataset_kstats_destroy(&zv->zv_kstat);
 	kmem_free(zv, sizeof (zvol_state_t));
-	zvol_minors--;
+	atomic_dec_32(&zvol_minors);
 }
 
 /*
@@ -1562,7 +1562,7 @@ out_doi:
 	if (error == 0 && zv) {
 		rw_enter(&zvol_state_lock, RW_WRITER);
 		zvol_insert(zv);
-		zvol_minors++;
+		atomic_inc_32(&zvol_minors);
 		rw_exit(&zvol_state_lock);
 		ZFS_LOG(1, "ZVOL %s created.", name);
 	}
