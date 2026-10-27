@@ -49,9 +49,9 @@
  *
  * The rrwlock_t uses tsd (thread specific data) to keep a list of
  * nodes (rrw_node_t), where each node keeps track of which specific
- * lock (rrw_node_t::rn_rrl) the thread has grabbed.  Since re-entering
+ * lock (rrw_node_t::rn_lock) the thread has grabbed.  Since re-entering
  * should be rare, a thread that grabs multiple reads on the same rrwlock_t
- * will store multiple rrw_node_ts of the same 'rrn_rrl'. Nodes on the
+ * will store multiple rrw_node_ts of the same 'rn_lock'. Nodes on the
  * tsd list can represent a different rrwlock_t.  This allows a thread
  * to enter multiple and unique rrwlock_ts for read locks at the same time.
  *
@@ -75,57 +75,64 @@
 /* global key for TSD */
 uint_t rrw_tsd_key;
 
+/*
+ * rn_lock is the lock the thread holds for read.  It is kept as an opaque
+ * pointer so that nodes can record other kinds of lock than an rrwlock_t.
+ */
 typedef struct rrw_node {
 	struct rrw_node *rn_next;
-	rrwlock_t *rn_rrl;
+	const void *rn_lock;
 	const void *rn_tag;
 } rrw_node_t;
 
 static rrw_node_t *
-rrn_find(rrwlock_t *rrl)
+rrn_find_lock(const void *lock)
 {
 	rrw_node_t *rn;
 
-	if (zfs_refcount_count(&rrl->rr_linked_rcount) == 0)
-		return (NULL);
-
 	for (rn = tsd_get(rrw_tsd_key); rn != NULL; rn = rn->rn_next) {
-		if (rn->rn_rrl == rrl)
+		if (rn->rn_lock == lock)
 			return (rn);
 	}
 	return (NULL);
+}
+
+static rrw_node_t *
+rrn_find(rrwlock_t *rrl)
+{
+	if (zfs_refcount_count(&rrl->rr_linked_rcount) == 0)
+		return (NULL);
+
+	return (rrn_find_lock(rrl));
 }
 
 /*
  * Add a node to the head of the singly linked list.
  */
 static void
-rrn_add(rrwlock_t *rrl, const void *tag)
+rrn_add(const void *lock, const void *tag)
 {
 	rrw_node_t *rn;
 
 	rn = kmem_alloc(sizeof (*rn), KM_SLEEP);
-	rn->rn_rrl = rrl;
+	rn->rn_lock = lock;
 	rn->rn_next = tsd_get(rrw_tsd_key);
 	rn->rn_tag = tag;
 	VERIFY0(tsd_set(rrw_tsd_key, rn));
 }
 
 /*
- * If a node is found for 'rrl', then remove the node from this
+ * If a node is found for 'lock', then remove the node from this
  * thread's list and return TRUE; otherwise return FALSE.
  */
 static boolean_t
-rrn_find_and_remove(rrwlock_t *rrl, const void *tag)
+rrn_find_and_remove_lock(const void *lock, const void *tag)
 {
 	rrw_node_t *rn;
 	rrw_node_t *prev = NULL;
 
-	if (zfs_refcount_count(&rrl->rr_linked_rcount) == 0)
-		return (B_FALSE);
-
 	for (rn = tsd_get(rrw_tsd_key); rn != NULL; rn = rn->rn_next) {
-		if (rn->rn_rrl == rrl && rn->rn_tag == tag) {
+		if (rn->rn_lock == lock && rn->rn_tag == tag) {
 			if (prev)
 				prev->rn_next = rn->rn_next;
 			else
@@ -136,6 +143,15 @@ rrn_find_and_remove(rrwlock_t *rrl, const void *tag)
 		prev = rn;
 	}
 	return (B_FALSE);
+}
+
+static boolean_t
+rrn_find_and_remove(rrwlock_t *rrl, const void *tag)
+{
+	if (zfs_refcount_count(&rrl->rr_linked_rcount) == 0)
+		return (B_FALSE);
+
+	return (rrn_find_and_remove_lock(rrl, tag));
 }
 
 void
@@ -304,7 +320,7 @@ rrw_tsd_destroy(void *arg)
 	rrw_node_t *rn = arg;
 	if (rn != NULL) {
 		panic("thread %p terminating with rrw lock %p held",
-		    (void *)curthread, (void *)rn->rn_rrl);
+		    (void *)curthread, rn->rn_lock);
 	}
 }
 
