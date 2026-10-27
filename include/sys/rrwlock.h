@@ -90,15 +90,38 @@ void rrw_tsd_destroy(void *arg);
  * A reader-mostly lock implementation, tuning above reader-writer locks
  * for hightly parallel read acquisitions, pessimizing write acquisitions.
  *
- * This should be a prime number.  See comment in rrwlock.c near
- * RRM_TD_LOCK() for details.
+ * Readers are spread over RRM_NUM_LOCKS stripes by thread.  This should be a
+ * prime number.  See comment in rrwlock.c near RRM_TD_LOCK() for details.
+ *
+ * Each stripe has a cache line of its own; see rrwlock.c for how it is used.
  */
 #define	RRM_NUM_LOCKS		17
+
+#define	RRM_OPEN	0	/* readers come and go freely */
+#define	RRM_WANTED	1	/* a writer waits for the stripe to drain */
+#define	RRM_WRITER	2	/* a writer holds the stripe */
+
+typedef struct rrm_stripe {
+	uint64_t	rs_readers;	/* anonymous readers */
+	uint64_t	rs_linked;	/* linked (tsd) readers; rm_lock */
+	uint32_t	rs_state;	/* RRM_*; changed under rm_lock */
+	uint32_t	rs_waiters;	/* readers asleep in rm_rcv; rm_lock */
+	uint32_t	rs_granted;	/* counted in, not back yet; rm_lock */
+	uint32_t	rs_gen;		/* handed to its waiters; rm_lock */
+#ifdef	ZFS_DEBUG
+	zfs_refcount_t	rs_anon_tags;	/* tags of the anonymous readers */
+#endif
+} ____cacheline_aligned rrm_stripe_t;
+
 typedef struct rrmlock {
-	rrwlock_t	locks[RRM_NUM_LOCKS];
+	kmutex_t	rm_lock;	/* writers and the reader slow paths */
+	kcondvar_t	rm_rcv;		/* waiting for the writer to leave */
+	kcondvar_t	rm_wcv;		/* the writer waits for a drain */
+	kthread_t	*rm_writer;	/* writer holding or taking the lock */
+	rrm_stripe_t	rm_stripes[RRM_NUM_LOCKS];
 } rrmlock_t;
 
-void rrm_init(rrmlock_t *rrl, boolean_t track_all);
+void rrm_init(rrmlock_t *rrl, boolean_t track_all);	/* B_FALSE only */
 void rrm_destroy(rrmlock_t *rrl);
 void rrm_enter(rrmlock_t *rrl, krw_t rw, const void *tag);
 void rrm_enter_read(rrmlock_t *rrl, const void *tag);
