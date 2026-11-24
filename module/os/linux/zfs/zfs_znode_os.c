@@ -1679,6 +1679,16 @@ zfs_zero_partial_page(znode_t *zp, uint64_t start, uint64_t len)
 
 	pp = find_lock_page(mp, start >> PAGE_SHIFT);
 	if (pp) {
+		/*
+		 * A page that is neither uptodate nor dirty was never filled.
+		 * Its reader fills it from the DMU, which has the zeros.
+		 */
+		if (!PageUptodate(pp) && !PageDirty(pp)) {
+			unlock_page(pp);
+			put_page(pp);
+			return;
+		}
+
 		if (mapping_writably_mapped(mp))
 			flush_dcache_page(pp);
 
